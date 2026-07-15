@@ -82,20 +82,24 @@ class LockError(Exception):
 
 
 def _acquire_lock(lock_path: Path, description: str) -> None:
-    """Create a lock file; raise LockError if it already exists."""
+    """Atomically create a lock file using O_CREAT|O_EXCL."""
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    if lock_path.exists():
+    try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        with os.fdopen(fd, "w") as f:
+            f.write(f"pid={os.getpid()}\ntime={time.time()}\n")
+    except FileExistsError:
         raise LockError(f"[Warning] {description} — lock exists: {lock_path}")
-    lock_path.write_text(f"pid={os.getpid()}\ntime={time.time()}\n")
 
 
 def _release_lock(lock_path: Path) -> None:
     """Remove a lock file (best-effort)."""
     try:
-        if lock_path.exists():
-            lock_path.unlink()
-    except OSError:
+        os.unlink(str(lock_path))
+    except FileNotFoundError:
         pass
+    except OSError as e:
+        logger.warning(f"Failed to release lock {lock_path}: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -299,9 +303,9 @@ def submit(
 
         logger.info(f"Found {len(source_files)} source files for {module}/{tag}")
 
-        # ---- stream-copy to raw ----
-        raw_tag_dir = raw_base / tag / module
-        raw_tag_dir.mkdir(parents=True, exist_ok=True)
+        # ---- stream-copy to raw/<uuid>/<tag>/<module> ----
+        raw_run_dir = raw_base / batch_uuid / tag / module
+        raw_run_dir.mkdir(parents=True, exist_ok=True)
 
         total_size = sum(os.path.getsize(f) for f in source_files)
 
@@ -315,7 +319,7 @@ def submit(
 
         for src in source_files:
             src_path = Path(src)
-            dest_path = raw_tag_dir / src_path.name
+            dest_path = raw_run_dir / src_path.name
             src_stat = os.stat(src)
 
             storage.add_file(batch_uuid, src, 0, "",
@@ -334,7 +338,7 @@ def submit(
         pre_ok = True
         for src in source_files:
             src_path = Path(src)
-            dest_path = raw_tag_dir / src_path.name
+            dest_path = raw_run_dir / src_path.name
             if not compare_metadata(src, str(dest_path)):
                 pre_ok = False
                 logger.error(f"pre_check FAILED: {src_path.name}")
@@ -348,37 +352,23 @@ def submit(
             storage.add_event(batch_uuid, EVENT_PRE_CHECK_FAIL, "Metadata mismatch")
             return SubmitResult(batch_uuid, False, "pre_check failed: metadata mismatch")
 
-        # ---- run gates ----
+        # ---- run gates (delegated to gates/runner.py) ----
         if gate_defs:
             for i, gate in enumerate(gate_defs):
                 _step("Gates", f"Running {gate.name}...", advance=False)
-                logger.info(f"Running gate '{gate.name}': {gate.command}")
-                t0 = time.time()
-                try:
-                    import subprocess
-                    raw_path = raw_tag_dir.resolve()
-                    proc = subprocess.run(
-                        gate.command.split() + [str(raw_path), module, tag],
-                        capture_output=True, text=True, timeout=300,
-                    )
-                    elapsed = time.time() - t0
-                    passed = proc.returncode == 0
-                    if passed:
-                        logger.info(f"Gate '{gate.name}' PASSED ({elapsed:.1f}s)")
-                        storage.add_event(batch_uuid, EVENT_GATE_PASS, gate.name)
-                        _step("Gates", f"{gate.name} ✓ ({elapsed:.1f}s)", advance=True)
-                    else:
-                        logger.error(f"Gate '{gate.name}' FAILED: {proc.stderr[:200]}")
-                        storage.add_event(batch_uuid, EVENT_GATE_FAIL, f"{gate.name}: {proc.stderr[:200]}")
-                        _step("Gates", f"{gate.name} ✗", advance=True)
-                        storage.update_batch_status(batch_uuid, STATUS_FAILED)
-                        return SubmitResult(batch_uuid, False, f"Gate '{gate.name}' failed")
-                except Exception as exc:
-                    logger.error(f"Gate '{gate.name}' ERROR: {exc}")
-                    storage.add_event(batch_uuid, EVENT_GATE_FAIL, str(exc))
-                    _step("Gates", f"{gate.name} ✗", advance=True)
+
+            results = run_gates(gate_defs, str(raw_run_dir), module, tag,
+                                progress_callback=None)
+
+            for i, gr in enumerate(results):
+                if gr.passed:
+                    storage.add_event(batch_uuid, EVENT_GATE_PASS, gr.name)
+                    _step("Gates", f"{gr.name} ✓ ({gr.elapsed:.1f}s)", advance=True)
+                else:
+                    storage.add_event(batch_uuid, EVENT_GATE_FAIL, f"{gr.name}: {gr.stderr[:200]}")
+                    _step("Gates", f"{gr.name} ✗", advance=True)
                     storage.update_batch_status(batch_uuid, STATUS_FAILED)
-                    return SubmitResult(batch_uuid, False, str(exc))
+                    return SubmitResult(batch_uuid, False, f"Gate '{gr.name}' failed")
         else:
             logger.info(f"No gates defined for tag={tag}")
 
@@ -389,7 +379,7 @@ def submit(
 
         for src in source_files:
             src_path = Path(src)
-            raw_path = raw_tag_dir / src_path.name
+            raw_path = raw_run_dir / src_path.name
             ready_path = ready_tag_dir / src_path.name
             os.replace(str(raw_path), str(ready_path))
             os.chmod(str(ready_path), 0o664)
@@ -426,12 +416,15 @@ def submit(
         return SubmitResult(batch_uuid, False, str(exc))
     finally:
         _release_lock(mlock)
-        raw_tag_dir = config.raw_dir() / tag / module
+        # clean up raw run directory if empty (raw_base may not be set on early exit)
+        raw_cleanup_base = config.raw_dir()
         try:
-            if raw_tag_dir.exists():
-                remaining = list(raw_tag_dir.iterdir())
-                if not remaining:
-                    raw_tag_dir.rmdir()
+            run_dir = raw_cleanup_base / batch_uuid / tag / module if batch_uuid else None
+            if run_dir and run_dir.exists():
+                run_dir.rmdir()
+                uuid_dir = run_dir.parent
+                if not any(uuid_dir.iterdir()):
+                    uuid_dir.rmdir()
         except OSError:
             pass
 
@@ -492,6 +485,7 @@ def release(
     module: Optional[str] = None,
     release_all: bool = False,
     progress=None,
+    username: str = "",
 ) -> ReleaseResult:
     """Execute the release pipeline.
 
@@ -506,10 +500,25 @@ def release(
     if tag not in VALID_TAGS:
         return ReleaseResult(False, f"Invalid tag: {tag}")
 
+    # ---- authorization ----
+    tag_cfg = config.tag_config(tag)
+    if tag_cfg and tag_cfg.release_users and username:
+        if username not in tag_cfg.release_users and username not in config.admins:
+            msg = f"User '{username}' not authorized to release tag '{tag}'. Allowed: {tag_cfg.release_users}"
+            logger.warning(msg)
+            return ReleaseResult(False, msg)
+
     if not version:
         version = time.strftime("%Y%m%d")
     else:
         version = f"{version}_{time.strftime('%Y%m%d')}"
+
+    # ---- prevent duplicate version ----
+    release_version_dir = config.release_dir() / tag / version
+    if release_version_dir.exists():
+        msg = f"Version '{version}' already exists for tag '{tag}'. Use a different -v label."
+        logger.error(msg)
+        return ReleaseResult(False, msg)
 
     batches = storage.get_submitted_batches(tag=tag, module=module)
     if not batches:
@@ -571,36 +580,42 @@ def release(
         return ReleaseResult(False, "全局 Release 锁已被持有，发布被阻断")
 
     try:
-        release_tag_dir = config.release_dir() / tag / version
-        release_tag_dir.mkdir(parents=True, exist_ok=True)
+        # ---- stage to temp directory (all-or-nothing) ----
+        import uuid as _uuid
+        staging_dir = config.release_dir() / tag / f".staging_{version}_{_uuid.uuid4().hex[:8]}"
+        staging_dir.mkdir(parents=True, exist_ok=True)
 
+        # Map: (batch_uuid, ready_path) -> staging_path for cross-pass lookup
+        staging_map: dict = {}
         total_files = 0
 
+        # Pass 1: copy all files to staging, build staging_map
         for batch in batches:
             batch_uuid = batch["batch_uuid"]
-            storage.add_event(batch_uuid, EVENT_RELEASE_START, f"Releasing to {version}")
-
             batch_module = batch["module"]
             files = storage.get_files(batch_uuid)
-            release_mod_dir = release_tag_dir / batch_module
-            release_mod_dir.mkdir(parents=True, exist_ok=True)
+            staging_mod_dir = staging_dir / batch_module
+            staging_mod_dir.mkdir(parents=True, exist_ok=True)
 
             for f in files:
-                ready_path = Path(f["ready_path"])
-                release_path = release_mod_dir / ready_path.name
-                shutil.copy2(str(ready_path), str(release_path))
-                os.chmod(str(release_path), 0o664)
-                storage.update_file_released(batch_uuid, f["source_path"], str(release_path))
+                ready_path = f["ready_path"]
+                sp = str(staging_mod_dir / Path(ready_path).name)
+                shutil.copy2(ready_path, sp)
+                os.chmod(sp, 0o664)
+                staging_map[(batch_uuid, ready_path)] = sp
                 total_files += 1
 
-            # ---- size diff vs previous version ----
-            prev_sizes = _load_previous_sizes(config.release_dir(), tag, version)
+        # Pass 2: size diff (read-only, against previous version)
+        prev_sizes = _load_previous_sizes(config.release_dir(), tag, version)
+        for batch in batches:
+            batch_uuid = batch["batch_uuid"]
+            files = storage.get_files(batch_uuid)
             for f in files:
-                fname = Path(f["ready_path"]).name
-                release_path = release_mod_dir / fname
-                if not release_path.exists():
+                sp = staging_map.get((batch_uuid, f["ready_path"]), "")
+                if not sp or not os.path.exists(sp):
                     continue
-                new_size = release_path.stat().st_size
+                fname = Path(sp).name
+                new_size = os.path.getsize(sp)
                 old_size = prev_sizes.get(fname)
                 if old_size is not None and old_size > 0:
                     ratio = (new_size - old_size) / old_size
@@ -618,23 +633,40 @@ def release(
                         logger.info(msg)
                         storage.add_event(batch_uuid, "size_change", msg)
 
-            post_ok = True
+        # Pass 3: post_check all batches (ready vs staging)
+        all_ok = True
+        for batch in batches:
+            batch_uuid = batch["batch_uuid"]
+            storage.add_event(batch_uuid, EVENT_RELEASE_START, f"Releasing to {version}")
+            files = storage.get_files(batch_uuid)
             for f in files:
                 ready_path = f["ready_path"]
-                release_path = release_mod_dir / Path(ready_path).name
-                if not compare_metadata(ready_path, str(release_path), check_mtime=True):
-                    post_ok = False
-                    storage.add_event(batch_uuid, EVENT_POST_CHECK_FAIL, str(release_path))
+                sp = staging_map.get((batch_uuid, ready_path), "")
+                if not compare_metadata(ready_path, sp, check_mtime=True):
+                    all_ok = False
+                    storage.add_event(batch_uuid, EVENT_POST_CHECK_FAIL, sp)
+                    storage.update_batch_status(batch_uuid, STATUS_FAILED)
+                    storage.add_event(batch_uuid, EVENT_FAILED, "Release post_check failed")
                     break
 
-            if post_ok:
-                storage.update_batch_status(batch_uuid, STATUS_RELEASED, version=version)
-                storage.add_event(batch_uuid, EVENT_RELEASE_DONE, f"Released to {version}")
-                storage.add_event(batch_uuid, EVENT_POST_CHECK_OK, "Final post-check passed")
-            else:
-                storage.update_batch_status(batch_uuid, STATUS_FAILED)
-                storage.add_event(batch_uuid, EVENT_FAILED, "Release post_check failed")
-                return ReleaseResult(False, f"Post-check failed for batch {batch_uuid}", version)
+        if not all_ok:
+            shutil.rmtree(str(staging_dir), ignore_errors=True)
+            return ReleaseResult(False, "Release aborted: post-check failed, staging cleaned", version)
+
+        # ---- all passed: commit ----
+        os.rename(str(staging_dir), str(release_version_dir))
+
+        for batch in batches:
+            batch_uuid = batch["batch_uuid"]
+            batch_module = batch["module"]
+            files = storage.get_files(batch_uuid)
+            for f in files:
+                sp = staging_map.get((batch_uuid, f["ready_path"]), "")
+                final_path = sp.replace(str(staging_dir), str(release_version_dir))
+                storage.update_file_released(batch_uuid, f["source_path"], final_path)
+            storage.update_batch_status(batch_uuid, STATUS_RELEASED, version=version)
+            storage.add_event(batch_uuid, EVENT_RELEASE_DONE, f"Released to {version}")
+            storage.add_event(batch_uuid, EVENT_POST_CHECK_OK, "Final post-check passed")
 
         latest_link = config.release_dir() / tag / "@latest"
         if latest_link.is_symlink() or latest_link.exists():

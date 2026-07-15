@@ -102,17 +102,16 @@ def main(ctx, config):
     required=True,
     help=f"Data tag: {', '.join(sorted(VALID_TAGS))}",
 )
-@click.option("-u", "--user", default=None, help="Submit user (defaults to $USER)")
 @click.option("-s", "--summary", default="", help="Submission summary / notes")
 @click.pass_context
-def _submit(ctx, module, tag, user, summary):
+def _submit(ctx, module, tag, summary):
     """Submit module data from a0.outgoing through gates to ready/."""
     config_path = ctx.obj["config_path"]
     logger.remove()  # suppress default stderr before any output
     cfg, storage = _init_config_and_storage(config_path)
     _setup_logger(cfg, console_output=False)
 
-    username = user or os.environ.get("USER", "unknown")
+    username = os.environ.get("USER", "unknown")
 
     if tag not in cfg.tag_names():
         console.print(f"[red]Error:[/] Unknown tag '{tag}'. Known: {', '.join(cfg.tag_names())}")
@@ -244,7 +243,9 @@ def _release(ctx, tag, release_all, module, version):
     if not release_all and not module:
         raise click.UsageError("Specify --all or --module")
 
-    console.print(f"\n[bold magenta]Release[/] tag=[bold]{tag}[/]")
+    username = os.environ.get("USER", "unknown")
+
+    console.print(f"\n[bold magenta]Release[/] tag=[bold]{tag}[/] user=[bold]{username}[/]")
 
     result = release(
         config=cfg,
@@ -253,6 +254,7 @@ def _release(ctx, tag, release_all, module, version):
         version=version,
         module=module if not release_all else None,
         release_all=release_all,
+        username=username,
     )
 
     if result.success:
