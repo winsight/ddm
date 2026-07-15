@@ -13,7 +13,7 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import psutil
 from loguru import logger
@@ -103,18 +103,13 @@ def find_source_files(
     user: str,
     module: str,
 ) -> List[str]:
-    """Find files in the flat outgoing_root matching expanded patterns.
-
-    Patterns may contain {user} and {module} placeholders.
-    Returns a list of absolute file paths.
-    """
+    """Find files in the flat outgoing_root matching expanded patterns."""
     root = Path(outgoing_root).resolve()
     if not root.is_dir():
         logger.warning(f"Outgoing root does not exist: {root}")
         return []
 
     matched: List[str] = []
-    # List all files in the flat directory
     try:
         all_files = [f.name for f in root.iterdir() if f.is_file()]
     except PermissionError:
@@ -123,7 +118,6 @@ def find_source_files(
 
     for pattern in patterns:
         expanded = pattern.format(user=user, module=module)
-        # Use fnmatch to match the expanded pattern against flat file names
         for fname in all_files:
             if fnmatch.fnmatch(fname, expanded):
                 filepath = root / fname
@@ -134,28 +128,16 @@ def find_source_files(
 
 
 # ---------------------------------------------------------------------------
-# Streaming copy with BLAKE3 + rich progress
+# Streaming copy with BLAKE3
 # ---------------------------------------------------------------------------
 
 def streaming_copy(
     source_path: str,
     dest_path: str,
-    progress=None,
-    task_id=None,
 ) -> Tuple[int, str]:
-    """Stream-copy a file, computing BLAKE3 on the fly.
-
-    Returns (file_size, blake3_hex).
-    Uses the provided rich.progress instance if given.
-    """
-    file_size = os.path.getsize(source_path)
+    """Stream-copy a file, computing BLAKE3 on the fly. Returns (size, hash_hex)."""
     dest = Path(dest_path)
     dest.parent.mkdir(parents=True, exist_ok=True)
-
-    # Open progress bar if rich is available
-    pbar = None
-    if progress is not None and task_id is not None:
-        progress.update(task_id, total=file_size, completed=0)
 
     if HAS_BLAKE3:
         hasher = blake3.blake3()
@@ -172,10 +154,8 @@ def streaming_copy(
             dst.write(chunk)
             hasher.update(chunk)
             copied += len(chunk)
-            if progress is not None and task_id is not None:
-                progress.update(task_id, completed=copied)
 
-    return file_size, hasher.hexdigest()
+    return copied, hasher.hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -208,10 +188,8 @@ def compare_metadata(source_path: str, dest_path: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def check_disk_space(target_dir: str, required_ratio: float = 1.2) -> None:
-    """Raise OSError if the mount point for target_dir has less than
-    required_ratio * total_source_size free space."""
+    """Raise OSError if mount point has insufficient free space."""
     usage = psutil.disk_usage(target_dir)
-    # We'll check at submit time with actual source sizes
     logger.info(f"Disk free on {target_dir}: {usage.free / (1024**3):.1f} GiB")
 
 
@@ -233,20 +211,15 @@ def submit(
     tag: str,
     username: str,
     summary: str = "",
-    progress=None,
-    gate_progress_callback=None,
+    on_step: Optional[Callable] = None,
 ) -> SubmitResult:
-    """Execute the full submit pipeline.
+    """Execute the full submit pipeline with unified progress callback.
 
-    1. Validate tag
-    2. Fast-fail checks (global lock, module lock, disk space)
-    3. Create batch record (PENDING)
-    4. Discover source files in flat a0.outgoing
-    5. Stream-copy to raw/<TAG>/<MODULE> with BLAKE3
-    6. pre_check metadata comparison
-    7. Run gates
-    8. Atomic move to ready/<TAG>/<MODULE>, chmod 664
-    9. Update status to SUBMITTED
+    on_step(phase, step, total, detail) is called at each pipeline step:
+      phase  — "Copying" | "Pre-check" | "Gates" | "Delivering"
+      step   — current step number (0-based before, n after)
+      total  — total steps in this pipeline run
+      detail — e.g. filename, gate name
     """
     # ---- validate ----
     if tag not in VALID_TAGS:
@@ -297,6 +270,18 @@ def submit(
             storage.add_event(batch_uuid, EVENT_FAILED, msg)
             return SubmitResult(batch_uuid, False, msg)
 
+        gate_defs = tag_cfg.gates
+        # total steps = copy (n files) + pre_check (1) + gates (n) + deliver (1)
+        total_steps = len(source_files) + len(gate_defs) + 2
+        step = 0
+
+        def _step(phase: str, detail: str = "", advance: bool = True):
+            nonlocal step
+            if advance:
+                step += 1
+            if on_step:
+                on_step(phase, step, total_steps, detail)
+
         logger.info(f"Found {len(source_files)} source files for {module}/{tag}")
 
         # ---- stream-copy to raw ----
@@ -305,7 +290,6 @@ def submit(
 
         total_size = sum(os.path.getsize(f) for f in source_files)
 
-        # Check disk space against actual source size
         usage = psutil.disk_usage(str(raw_base))
         if usage.free < total_size * 1.2:
             msg = f"磁盘空间不足: 需要 {total_size * 1.2 / (1024**3):.1f} GiB, 可用 {usage.free / (1024**3):.1f} GiB"
@@ -314,35 +298,21 @@ def submit(
             storage.add_event(batch_uuid, EVENT_DISK_FULL, msg)
             return SubmitResult(batch_uuid, False, msg)
 
-        # Rich progress for copy
-        overall_task = None
-        if progress is not None:
-            overall_task = progress.add_task(
-                f"[cyan]Copying {module}/{tag}",
-                total=total_size,
-            )
-
         for src in source_files:
             src_path = Path(src)
             dest_path = raw_tag_dir / src_path.name
 
-            # Record file in DB
             storage.add_file(batch_uuid, src, 0, "")
-
-            # Stream-copy with BLAKE3
-            file_size, blake3_hex = streaming_copy(
-                src, str(dest_path), progress=progress, task_id=overall_task
-            )
-
+            file_size, blake3_hex = streaming_copy(src, str(dest_path))
             storage.update_file_raw(batch_uuid, src, str(dest_path), file_size, blake3_hex)
-            logger.info(f"Copied: {src_path.name} -> {dest_path} ({file_size} bytes)")
 
-        if progress is not None and overall_task is not None:
-            progress.remove_task(overall_task)
+            _step("Copying", f"{src_path.name} ({file_size} bytes)")
+            logger.info(f"Copied: {src_path.name} -> {dest_path} ({file_size} bytes)")
 
         storage.add_event(batch_uuid, EVENT_COPY_DONE, f"{len(source_files)} files copied")
 
-        # ---- pre_check: compare source vs raw ----
+        # ---- pre_check ----
+        _step("Pre-check", f"Verifying {len(source_files)} files", advance=False)
         pre_ok = True
         for src in source_files:
             src_path = Path(src)
@@ -354,30 +324,48 @@ def submit(
 
         if pre_ok:
             storage.add_event(batch_uuid, EVENT_PRE_CHECK_OK, "Metadata matches")
+            _step("Pre-check", "OK", advance=True)
         else:
             storage.update_batch_status(batch_uuid, STATUS_FAILED)
             storage.add_event(batch_uuid, EVENT_PRE_CHECK_FAIL, "Metadata mismatch")
             return SubmitResult(batch_uuid, False, "pre_check failed: metadata mismatch")
 
         # ---- run gates ----
-        gate_defs = tag_cfg.gates
         if gate_defs:
-            gate_results = run_gates(
-                gate_defs, str(raw_tag_dir), module, tag,
-                progress_callback=gate_progress_callback,
-            )
-            for gr in gate_results:
-                if gr.passed:
-                    storage.add_event(batch_uuid, EVENT_GATE_PASS, gr.name)
-                else:
-                    storage.add_event(batch_uuid, EVENT_GATE_FAIL, f"{gr.name}: {gr.stderr[:200]}")
-            if not all_gates_passed(gate_results):
-                storage.update_batch_status(batch_uuid, STATUS_FAILED)
-                return SubmitResult(batch_uuid, False, "Gates failed")
+            for i, gate in enumerate(gate_defs):
+                _step("Gates", f"Running {gate.name}...", advance=False)
+                logger.info(f"Running gate '{gate.name}': {gate.command}")
+                t0 = time.time()
+                try:
+                    import subprocess
+                    raw_path = raw_tag_dir.resolve()
+                    proc = subprocess.run(
+                        gate.command.split() + [str(raw_path), module, tag],
+                        capture_output=True, text=True, timeout=300,
+                    )
+                    elapsed = time.time() - t0
+                    passed = proc.returncode == 0
+                    if passed:
+                        logger.info(f"Gate '{gate.name}' PASSED ({elapsed:.1f}s)")
+                        storage.add_event(batch_uuid, EVENT_GATE_PASS, gate.name)
+                        _step("Gates", f"{gate.name} ✓ ({elapsed:.1f}s)", advance=True)
+                    else:
+                        logger.error(f"Gate '{gate.name}' FAILED: {proc.stderr[:200]}")
+                        storage.add_event(batch_uuid, EVENT_GATE_FAIL, f"{gate.name}: {proc.stderr[:200]}")
+                        _step("Gates", f"{gate.name} ✗", advance=True)
+                        storage.update_batch_status(batch_uuid, STATUS_FAILED)
+                        return SubmitResult(batch_uuid, False, f"Gate '{gate.name}' failed")
+                except Exception as exc:
+                    logger.error(f"Gate '{gate.name}' ERROR: {exc}")
+                    storage.add_event(batch_uuid, EVENT_GATE_FAIL, str(exc))
+                    _step("Gates", f"{gate.name} ✗", advance=True)
+                    storage.update_batch_status(batch_uuid, STATUS_FAILED)
+                    return SubmitResult(batch_uuid, False, str(exc))
         else:
             logger.info(f"No gates defined for tag={tag}")
 
         # ---- atomic move to ready + chmod ----
+        _step("Delivering", f"Moving to ready/{tag}/{module}", advance=False)
         ready_tag_dir = config.ready_dir() / tag / module
         ready_tag_dir.mkdir(parents=True, exist_ok=True)
 
@@ -385,17 +373,13 @@ def submit(
             src_path = Path(src)
             raw_path = raw_tag_dir / src_path.name
             ready_path = ready_tag_dir / src_path.name
-
-            # Atomic rename (same filesystem)
             os.replace(str(raw_path), str(ready_path))
-            # Enforce permissions
             os.chmod(str(ready_path), 0o664)
-
             storage.update_file_ready(batch_uuid, src, str(ready_path))
 
         storage.add_event(batch_uuid, EVENT_DELIVERED, f"Files moved to {ready_tag_dir}")
 
-        # ---- post_check (1st): verify ready files ----
+        # ---- post_check (1st) ----
         post_ok = True
         for src in source_files:
             src_path = Path(src)
@@ -408,6 +392,7 @@ def submit(
         if post_ok:
             storage.update_batch_status(batch_uuid, STATUS_SUBMITTED)
             storage.add_event(batch_uuid, EVENT_SUBMITTED, "Batch ready for release")
+            _step("Delivering", "Done", advance=True)
             logger.info(f"Submit complete: {batch_uuid} -> SUBMITTED")
             return SubmitResult(batch_uuid, True, f"Submitted: {len(source_files)} files -> {ready_tag_dir}")
         else:
@@ -423,7 +408,6 @@ def submit(
         return SubmitResult(batch_uuid, False, str(exc))
     finally:
         _release_lock(mlock)
-        # Clean up raw directory if empty
         raw_tag_dir = config.raw_dir() / tag / module
         try:
             if raw_tag_dir.exists():
@@ -467,18 +451,15 @@ def release(
     if tag not in VALID_TAGS:
         return ReleaseResult(False, f"Invalid tag: {tag}")
 
-    # ---- default version ----
     if not version:
         version = time.strftime("%Y%m%d")
     else:
         version = f"{version}_{time.strftime('%Y%m%d')}"
 
-    # ---- query submitted batches ----
     batches = storage.get_submitted_batches(tag=tag, module=module)
     if not batches:
         return ReleaseResult(False, f"No SUBMITTED batches for tag={tag}")
 
-    # ---- anti-split-brain: verify physical files ----
     for batch in batches:
         batch_uuid = batch["batch_uuid"]
         files = storage.get_files(batch_uuid)
@@ -491,7 +472,6 @@ def release(
                 storage.add_event(batch_uuid, EVENT_FAILED, msg)
                 return ReleaseResult(False, msg)
 
-    # ---- acquire global lock ----
     glock = config.global_lock_path()
     try:
         _acquire_lock(glock, "全局 Release 进行中")
@@ -510,22 +490,17 @@ def release(
 
             batch_module = batch["module"]
             files = storage.get_files(batch_uuid)
-
             release_mod_dir = release_tag_dir / batch_module
             release_mod_dir.mkdir(parents=True, exist_ok=True)
 
             for f in files:
                 ready_path = Path(f["ready_path"])
                 release_path = release_mod_dir / ready_path.name
-
-                # Copy ready -> release
                 shutil.copy2(str(ready_path), str(release_path))
                 os.chmod(str(release_path), 0o664)
-
                 storage.update_file_released(batch_uuid, f["source_path"], str(release_path))
                 total_files += 1
 
-            # ---- post_check (2nd): verify ready vs release ----
             post_ok = True
             for f in files:
                 ready_path = f["ready_path"]
@@ -544,13 +519,11 @@ def release(
                 storage.add_event(batch_uuid, EVENT_FAILED, "Release post_check failed")
                 return ReleaseResult(False, f"Post-check failed for batch {batch_uuid}", version)
 
-        # ---- update @latest symlink ----
         latest_link = config.release_dir() / tag / "@latest"
         if latest_link.is_symlink() or latest_link.exists():
             latest_link.unlink()
         latest_link.symlink_to(version, target_is_directory=True)
 
-        # ---- clean up ready directory for released files ----
         for batch in batches:
             batch_module = batch["module"]
             ready_mod_dir = config.ready_dir() / tag / batch_module

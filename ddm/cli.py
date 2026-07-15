@@ -32,16 +32,17 @@ def _init_config_and_storage(config_path: str):
     return cfg, storage
 
 
-def _setup_logger(cfg: Config):
-    """Configure loguru to write to log_dir."""
+def _setup_logger(cfg: Config, console_output: bool = True):
+    """Configure loguru. When console_output=False, only log to file."""
     log_dir = Path(cfg.log_path())
     log_dir.mkdir(parents=True, exist_ok=True)
     logger.remove()
-    logger.add(
-        sys.stderr,
-        format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
-        level="INFO",
-    )
+    if console_output:
+        logger.add(
+            sys.stderr,
+            format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
+            level="INFO",
+        )
     logger.add(
         log_dir / "ddm_{time:YYYY-MM-DD}.log",
         rotation="10 MB",
@@ -107,64 +108,56 @@ def main(ctx, config):
 def _submit(ctx, module, tag, user, summary):
     """Submit module data from a0.outgoing through gates to ready/."""
     config_path = ctx.obj["config_path"]
+    logger.remove()  # suppress default stderr before any output
     cfg, storage = _init_config_and_storage(config_path)
-    _setup_logger(cfg)
+    _setup_logger(cfg, console_output=False)
 
     username = user or os.environ.get("USER", "unknown")
 
-    # Validate tag
     if tag not in cfg.tag_names():
         console.print(f"[red]Error:[/] Unknown tag '{tag}'. Known: {', '.join(cfg.tag_names())}")
         sys.exit(1)
 
     console.print(f"\n[bold cyan]Submit[/] module=[bold]{module}[/] tag=[bold]{tag}[/] user=[bold]{username}[/]")
-    console.print(f"  Outgoing root: {cfg.outgoing_root}")
 
-    gate_task_id = None
-    gate_names_done = []
+    pbar_task = None
+    pbar = None
 
-    def gate_callback(gate_index, gate_name, status, total_gates):
-        """Update a single shared progress bar as gates complete."""
-        nonlocal gate_task_id
-        if gate_task_id is None:
-            gate_task_id = progress.add_task(
-                f"[yellow]  Gates: 0/{total_gates}[/]",
-                total=total_gates,
+    def on_step(phase: str, step: int, total: int, detail: str = ""):
+        """Single-bar progress: called at each pipeline step."""
+        nonlocal pbar_task, pbar
+        if pbar is None:
+            pbar = Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeElapsedColumn(),
+                console=console,
             )
-        if status == "start":
-            progress.update(gate_task_id,
-                            description=f"[yellow]  Gates: {gate_index}/{total_gates}  running {gate_name}...[/]")
-        elif status == "pass":
-            gate_names_done.append(f"[green]{gate_name} ✓[/]")
-            progress.update(gate_task_id, completed=gate_index + 1,
-                            description=f"[yellow]  Gates: {gate_index + 1}/{total_gates}[/]")
-        elif status == "fail":
-            gate_names_done.append(f"[red]{gate_name} ✗[/]")
-            progress.update(gate_task_id, completed=gate_index + 1,
-                            description=f"[red]  Gates: {gate_index + 1}/{total_gates}  {gate_name} FAILED[/]")
+            pbar.start()
+        if pbar_task is None:
+            pbar_task = pbar.add_task(
+                f"[cyan]{phase}[/] {detail}".strip(),
+                total=total,
+            )
+        pbar.update(pbar_task, completed=step, description=f"[cyan]{phase}[/] {detail}".strip())
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        result = submit(
-            config=cfg,
-            storage=storage,
-            module=module,
-            tag=tag,
-            username=username,
-            summary=summary,
-            progress=progress,
-            gate_progress_callback=gate_callback,
-        )
+    result = submit(
+        config=cfg,
+        storage=storage,
+        module=module,
+        tag=tag,
+        username=username,
+        summary=summary,
+        on_step=on_step,
+    )
+
+    if pbar is not None:
+        pbar.stop()
 
     if result.success:
         console.print(f"\n[bold green]✓[/] Submit successful")
-        console.print(f"  Batch UUID: {result.batch_uuid}")
         console.print(f"  {result.message}")
     else:
         console.print(f"\n[bold red]✗[/] Submit failed: {result.message}")
