@@ -257,6 +257,10 @@ def _release(ctx, tag, release_all, module, version):
 
     if result.success:
         console.print(f"\n[bold green]✓[/] Release successful: {result.message}")
+        if result.integrity_warnings:
+            console.print(f"\n[bold yellow]⚠ Integrity Warnings:[/]")
+            for w in result.integrity_warnings:
+                console.print(f"  {w}")
     else:
         console.print(f"\n[bold red]✗[/] Release failed: {result.message}")
         sys.exit(1)

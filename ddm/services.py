@@ -423,10 +423,12 @@ def submit(
 # ---------------------------------------------------------------------------
 
 class ReleaseResult:
-    def __init__(self, success: bool, message: str, version: str = ""):
+    def __init__(self, success: bool, message: str, version: str = "",
+                 integrity_warnings: Optional[List[str]] = None):
         self.success = success
         self.message = message
         self.version = version
+        self.integrity_warnings = integrity_warnings or []
 
 
 def release(
@@ -473,6 +475,32 @@ def release(
                 return ReleaseResult(False, msg)
 
     glock = config.global_lock_path()
+
+    # ---- integrity check: audit previously RELEASED versions ----
+    integrity_warnings: List[str] = []
+    released_batches = storage.list_batches(tag=tag, status=STATUS_RELEASED)
+    if released_batches:
+        missing_versions: set = set()
+        missing_details: List[str] = []
+        for b in released_batches:
+            b_uuid = b["batch_uuid"]
+            files = storage.get_files(b_uuid)
+            for f in files:
+                rp = f.get("release_path", "")
+                if rp and not os.path.exists(rp):
+                    version_tag = b.get("version", "unknown")
+                    missing_versions.add(version_tag)
+                    missing_details.append(f"  {rp}")
+                    storage.add_event(
+                        b_uuid, "release_file_missing",
+                        f"Physically deleted: {rp} (version: {version_tag})"
+                    )
+                    logger.warning(f"Release file missing — may have been rm -rf'd: {rp}")
+        if missing_versions:
+            msg = (f"Integrity warning: {len(missing_versions)} previously-released "
+                   f"version(s) have missing files: {sorted(missing_versions)}")
+            integrity_warnings = [msg] + missing_details
+            logger.warning(msg)
 
     # ---- fast-fail: check no module is currently submitting ----
     raw_dir = config.raw_dir()
@@ -522,7 +550,7 @@ def release(
                     break
 
             if post_ok:
-                storage.update_batch_status(batch_uuid, STATUS_RELEASED)
+                storage.update_batch_status(batch_uuid, STATUS_RELEASED, version=version)
                 storage.add_event(batch_uuid, EVENT_RELEASE_DONE, f"Released to {version}")
                 storage.add_event(batch_uuid, EVENT_POST_CHECK_OK, "Final post-check passed")
             else:
@@ -542,7 +570,8 @@ def release(
                 shutil.rmtree(str(ready_mod_dir), ignore_errors=True)
 
         logger.info(f"Release complete: {tag}/{version} ({total_files} files)")
-        return ReleaseResult(True, f"Released {tag}/{version} ({total_files} files, {len(batches)} batches)", version)
+        return ReleaseResult(True, f"Released {tag}/{version} ({total_files} files, {len(batches)} batches)",
+                            version, integrity_warnings=integrity_warnings)
 
     except Exception as exc:
         logger.exception(f"Release failed: {exc}")

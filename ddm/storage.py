@@ -151,15 +151,21 @@ class Storage:
         logger.info(f"Batch created: {batch_uuid} module={module} tag={tag}")
         return batch_uuid
 
-    def update_batch_status(self, batch_uuid: str, status: str):
+    def update_batch_status(self, batch_uuid: str, status: str, version: str = ""):
         if status not in VALID_STATUSES:
             raise ValueError(f"Invalid status: {status}")
         now = time.time()
         with self._tx() as conn:
-            conn.execute(
-                "UPDATE batches SET status = ?, updated_at = ? WHERE batch_uuid = ?",
-                (status, now, batch_uuid),
-            )
+            if version:
+                conn.execute(
+                    "UPDATE batches SET status = ?, version = ?, updated_at = ? WHERE batch_uuid = ?",
+                    (status, version, now, batch_uuid),
+                )
+            else:
+                conn.execute(
+                    "UPDATE batches SET status = ?, updated_at = ? WHERE batch_uuid = ?",
+                    (status, now, batch_uuid),
+                )
 
     def get_batch(self, batch_uuid: str) -> Optional[dict]:
         with self._connect() as conn:
