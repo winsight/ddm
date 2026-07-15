@@ -1,0 +1,87 @@
+# DDM (Data Delivery Manager) Configuration
+# ==========================================
+
+admins:
+  - wangshuai
+  - w00949819
+  - zhangsan
+  - lisi
+
+# a0.outgoing 源数据根目录（平铺结构，无 tag 子目录）
+outgoing_root: ./a0.outgoing
+
+# 运行时仓库根目录
+repository_root: ./repository
+
+# 日志目录
+log_dir: ./logs
+
+# 默认 tag 配置 —— 所有模块自动继承
+defaults:
+  tag:
+    PV_ITER:
+      description: 物理验证迭代版
+      file_patterns:
+        - "{user}_{module}.v.gz"
+        - "{user}_{module}.hier.gds"
+        - "{user}_{module}.v.pg"
+      gates:
+        - name: verilog_syntax_check
+          command: python -m ddm.gates.verilog_check
+      release_users:
+        - w00949819
+
+    LVS_PASS:
+      description: LVS 验证通过版
+      file_patterns:
+        - "{user}_{module}.lvs.v.gz"
+        - "{user}_{module}.lvs.gds"
+      gates:
+        - name: lvs_integrity_check
+          command: python -m ddm.gates.lvs_check
+      release_users:
+        - wangshuai
+
+    BASE_CLEAN:
+      description: Base DRC Clean 版
+      file_patterns:
+        - "{user}_{module}.base.v.gz"
+        - "{user}_{module}.base.gds"
+      gates:
+        - name: drc_baseline_check
+          command: python -m ddm.gates.drc_check
+      release_users:
+        - wangshuai
+
+    PV_FINAL:
+      description: 物理验证最终版
+      file_patterns:
+        - "{user}_{module}.final.v.gz"
+        - "{user}_{module}.final.hier.gds"
+      gates:
+        - name: final_integrity_check
+          command: python -m ddm.gates.final_check
+      release_users:
+        - w00949819
+
+    PI_ITER:
+      description: 工艺改进迭代版
+      file_patterns:
+        - "{user}_{module}.pi.v.pg"
+        - "{user}_{module}.pi.hier.gds.gz"
+      gates:
+        - name: pi_iter_check
+          command: python -m ddm.gates.pi_check
+      release_users:
+        - wangshuai
+
+    PI_FINAL:
+      description: PI 最终版
+      file_patterns:
+        - "{user}_{module}.pi.final.v.pg"
+        - "{user}_{module}.pi.final.gds.gz"
+      gates:
+        - name: pi_final_check
+          command: python -m ddm.gates.pi_final_check
+      release_users:
+        - wangshuai
