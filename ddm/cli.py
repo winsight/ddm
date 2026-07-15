@@ -127,21 +127,21 @@ def _submit(ctx, module, tag, user, summary):
         if status == "start":
             tid = progress.add_task(
                 f"[yellow]  Gate [{gate_index + 1}/{total}]: {gate_name}[/]",
-                total=None,
+                total=1,
             )
             gate_tasks[gate_name] = tid
         elif status == "pass":
             tid = gate_tasks.get(gate_name)
             if tid is not None:
-                progress.update(tid, description=f"[green]  Gate [{gate_index + 1}/{total}]: {gate_name} ✓[/]",
-                                total=1, completed=1)
-                progress.remove_task(tid)
+                progress.update(tid,
+                                description=f"[green]  Gate [{gate_index + 1}/{total}]: {gate_name} ✓[/]",
+                                completed=1)
         elif status == "fail":
             tid = gate_tasks.get(gate_name)
             if tid is not None:
-                progress.update(tid, description=f"[red]  Gate [{gate_index + 1}/{total}]: {gate_name} ✗[/]",
-                                total=1, completed=1)
-                progress.remove_task(tid)
+                progress.update(tid,
+                                description=f"[red]  Gate [{gate_index + 1}/{total}]: {gate_name} ✗[/]",
+                                completed=1)
 
     with Progress(
         SpinnerColumn(),
