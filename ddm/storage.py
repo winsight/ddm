@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS files (
     ready_path   TEXT,
     release_path TEXT,
     file_size    INTEGER NOT NULL DEFAULT 0,
+    source_size  INTEGER NOT NULL DEFAULT 0,
+    source_mtime REAL NOT NULL DEFAULT 0,
     blake3_hash  TEXT,
     status       TEXT NOT NULL DEFAULT 'PENDING',
     created_at   REAL NOT NULL,
@@ -216,13 +218,17 @@ class Storage:
         source_path: str,
         file_size: int = 0,
         blake3_hash: str = "",
+        source_size: int = 0,
+        source_mtime: float = 0.0,
     ) -> int:
         now = time.time()
         with self._tx() as conn:
             cur = conn.execute(
-                """INSERT INTO files (batch_uuid, source_path, file_size, blake3_hash, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (batch_uuid, source_path, file_size, blake3_hash, STATUS_PENDING, now),
+                """INSERT INTO files (batch_uuid, source_path, file_size, blake3_hash,
+                   source_size, source_mtime, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (batch_uuid, source_path, file_size, blake3_hash,
+                 source_size, source_mtime, STATUS_PENDING, now),
             )
             return cur.lastrowid
 

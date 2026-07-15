@@ -167,18 +167,28 @@ def streaming_copy(
 # Metadata comparison (pre_check / post_check)
 # ---------------------------------------------------------------------------
 
-def compare_metadata(source_path: str, dest_path: str) -> bool:
-    """Compare file size and BLAKE3 between source and destination."""
+def compare_metadata(source_path: str, dest_path: str, check_mtime: bool = False) -> bool:
+    """Compare file size and BLAKE3 hash. Optionally also check mtime."""
     if not os.path.exists(dest_path):
         logger.error(f"Destination missing: {dest_path}")
         return False
 
-    src_size = os.path.getsize(source_path)
-    dst_size = os.path.getsize(dest_path)
-    if src_size != dst_size:
-        logger.error(f"Size mismatch: {src_size} vs {dst_size} ({source_path})")
+    src_stat = os.stat(source_path)
+    dst_stat = os.stat(dest_path)
+
+    # size
+    if src_stat.st_size != dst_stat.st_size:
+        logger.error(f"Size mismatch: {src_stat.st_size} vs {dst_stat.st_size} ({source_path})")
         return False
 
+    # mtime (only for stages where it should be preserved, e.g. copy2)
+    if check_mtime:
+        if int(src_stat.st_mtime) != int(dst_stat.st_mtime):
+            logger.warning(
+                f"Timestamp mismatch: src={src_stat.st_mtime:.0f} dst={dst_stat.st_mtime:.0f} ({source_path})"
+            )
+
+    # BLAKE3 hash
     src_hash = _blake3_hash(source_path)
     dst_hash = _blake3_hash(dest_path)
     if src_hash != dst_hash:
@@ -306,8 +316,11 @@ def submit(
         for src in source_files:
             src_path = Path(src)
             dest_path = raw_tag_dir / src_path.name
+            src_stat = os.stat(src)
 
-            storage.add_file(batch_uuid, src, 0, "")
+            storage.add_file(batch_uuid, src, 0, "",
+                             source_size=src_stat.st_size,
+                             source_mtime=src_stat.st_mtime)
             file_size, blake3_hex = streaming_copy(src, str(dest_path))
             storage.update_file_raw(batch_uuid, src, str(dest_path), file_size, blake3_hex)
 
@@ -609,7 +622,7 @@ def release(
             for f in files:
                 ready_path = f["ready_path"]
                 release_path = release_mod_dir / Path(ready_path).name
-                if not compare_metadata(ready_path, str(release_path)):
+                if not compare_metadata(ready_path, str(release_path), check_mtime=True):
                     post_ok = False
                     storage.add_event(batch_uuid, EVENT_POST_CHECK_FAIL, str(release_path))
                     break
