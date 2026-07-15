@@ -303,8 +303,8 @@ def submit(
 
         logger.info(f"Found {len(source_files)} source files for {module}/{tag}")
 
-        # ---- stream-copy to raw/<uuid>/<tag>/<module> ----
-        raw_run_dir = raw_base / batch_uuid / tag / module
+        # ---- stream-copy to raw/<tag>/<module> ----
+        raw_run_dir = raw_base / tag / module
         raw_run_dir.mkdir(parents=True, exist_ok=True)
 
         total_size = sum(os.path.getsize(f) for f in source_files)
@@ -416,15 +416,14 @@ def submit(
         return SubmitResult(batch_uuid, False, str(exc))
     finally:
         _release_lock(mlock)
-        # clean up raw run directory if empty (raw_base may not be set on early exit)
+        # clean up raw run directory if empty
         raw_cleanup_base = config.raw_dir()
         try:
-            run_dir = raw_cleanup_base / batch_uuid / tag / module if batch_uuid else None
-            if run_dir and run_dir.exists():
-                run_dir.rmdir()
-                uuid_dir = run_dir.parent
-                if not any(uuid_dir.iterdir()):
-                    uuid_dir.rmdir()
+            run_dir = raw_cleanup_base / tag / module
+            if run_dir.exists():
+                remaining = list(run_dir.iterdir())
+                if not remaining:
+                    run_dir.rmdir()
         except OSError:
             pass
 
