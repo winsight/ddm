@@ -120,28 +120,28 @@ def _submit(ctx, module, tag, user, summary):
     console.print(f"\n[bold cyan]Submit[/] module=[bold]{module}[/] tag=[bold]{tag}[/] user=[bold]{username}[/]")
     console.print(f"  Outgoing root: {cfg.outgoing_root}")
 
-    gate_tasks = {}
+    gate_task_id = None
+    gate_names_done = []
 
-    def gate_callback(gate_index, gate_name, status, total):
-        """Update Rich progress as each gate starts/completes."""
-        if status == "start":
-            tid = progress.add_task(
-                f"[yellow]  Gate [{gate_index + 1}/{total}]: {gate_name}[/]",
-                total=1,
+    def gate_callback(gate_index, gate_name, status, total_gates):
+        """Update a single shared progress bar as gates complete."""
+        nonlocal gate_task_id
+        if gate_task_id is None:
+            gate_task_id = progress.add_task(
+                f"[yellow]  Gates: 0/{total_gates}[/]",
+                total=total_gates,
             )
-            gate_tasks[gate_name] = tid
+        if status == "start":
+            progress.update(gate_task_id,
+                            description=f"[yellow]  Gates: {gate_index}/{total_gates}  running {gate_name}...[/]")
         elif status == "pass":
-            tid = gate_tasks.get(gate_name)
-            if tid is not None:
-                progress.update(tid,
-                                description=f"[green]  Gate [{gate_index + 1}/{total}]: {gate_name} ✓[/]",
-                                completed=1)
+            gate_names_done.append(f"[green]{gate_name} ✓[/]")
+            progress.update(gate_task_id, completed=gate_index + 1,
+                            description=f"[yellow]  Gates: {gate_index + 1}/{total_gates}[/]")
         elif status == "fail":
-            tid = gate_tasks.get(gate_name)
-            if tid is not None:
-                progress.update(tid,
-                                description=f"[red]  Gate [{gate_index + 1}/{total}]: {gate_name} ✗[/]",
-                                completed=1)
+            gate_names_done.append(f"[red]{gate_name} ✗[/]")
+            progress.update(gate_task_id, completed=gate_index + 1,
+                            description=f"[red]  Gates: {gate_index + 1}/{total_gates}  {gate_name} FAILED[/]")
 
     with Progress(
         SpinnerColumn(),
