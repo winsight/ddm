@@ -68,6 +68,11 @@ except ImportError:
     logger.warning("blake3 not installed; falling back to BLAKE2b-256")
 
 
+# Threshold for flagging abnormal file-size changes between versions
+SIZE_CHANGE_WARN_RATIO = 0.30   # warn if size changes by ±30% or more
+SIZE_CHANGE_ALERT_RATIO = 0.50  # alert if size changes by ±50% or more
+
+
 # ---------------------------------------------------------------------------
 # Lock helpers
 # ---------------------------------------------------------------------------
@@ -422,6 +427,41 @@ def submit(
 # Release flow
 # ---------------------------------------------------------------------------
 
+def _load_previous_sizes(release_dir: Path, tag: str, current_version: str) -> dict:
+    """Scan the previous release version and return {filename: size} map."""
+    tag_dir = release_dir / tag
+    if not tag_dir.is_dir():
+        return {}
+
+    prev_dir = None
+    latest_link = tag_dir / "@latest"
+    if latest_link.is_symlink():
+        resolved = latest_link.resolve()
+        if resolved.name != current_version and resolved.is_dir():
+            prev_dir = resolved
+
+    if prev_dir is None:
+        candidates = []
+        for d in tag_dir.iterdir():
+            if d.is_dir() and d.name not in ("@latest", current_version):
+                try:
+                    candidates.append((d.stat().st_mtime, d))
+                except OSError:
+                    pass
+        if candidates:
+            candidates.sort(reverse=True)
+            prev_dir = candidates[0][1]
+
+    if prev_dir is None:
+        return {}
+
+    sizes: dict = {}
+    for f in prev_dir.rglob("*"):
+        if f.is_file():
+            sizes[f.name] = f.stat().st_size
+    return sizes
+
+
 class ReleaseResult:
     def __init__(self, success: bool, message: str, version: str = "",
                  integrity_warnings: Optional[List[str]] = None):
@@ -539,6 +579,31 @@ def release(
                 os.chmod(str(release_path), 0o664)
                 storage.update_file_released(batch_uuid, f["source_path"], str(release_path))
                 total_files += 1
+
+            # ---- size diff vs previous version ----
+            prev_sizes = _load_previous_sizes(config.release_dir(), tag, version)
+            for f in files:
+                fname = Path(f["ready_path"]).name
+                release_path = release_mod_dir / fname
+                if not release_path.exists():
+                    continue
+                new_size = release_path.stat().st_size
+                old_size = prev_sizes.get(fname)
+                if old_size is not None and old_size > 0:
+                    ratio = (new_size - old_size) / old_size
+                    if abs(ratio) >= SIZE_CHANGE_ALERT_RATIO:
+                        direction = "increase" if ratio > 0 else "decrease"
+                        msg = (f"Size anomaly [{direction} {abs(ratio)*100:.0f}%]: "
+                               f"{fname}: {old_size} → {new_size} bytes")
+                        logger.warning(msg)
+                        storage.add_event(batch_uuid, "size_anomaly", msg)
+                        integrity_warnings.append(f"  {msg}")
+                    elif abs(ratio) >= SIZE_CHANGE_WARN_RATIO:
+                        direction = "increase" if ratio > 0 else "decrease"
+                        msg = (f"Size change [{direction} {abs(ratio)*100:.0f}%]: "
+                               f"{fname}: {old_size} → {new_size} bytes")
+                        logger.info(msg)
+                        storage.add_event(batch_uuid, "size_change", msg)
 
             post_ok = True
             for f in files:
