@@ -1,0 +1,61 @@
+# Docker image for building DDM binary on CentOS 7.9 (glibc 2.17)
+#
+# Build:
+#   docker build -t ddm-builder -f Dockerfile.build .
+#
+# Run with DDM source mounted:
+#   docker run --rm -v $(pwd):/build ddm-builder
+#
+# Output: dist/ddm (standalone Linux binary)
+
+FROM centos:7.9.2009
+
+RUN yum install -y \
+    gcc \
+    make \
+    openssl-devel \
+    bzip2-devel \
+    libffi-devel \
+    zlib-devel \
+    git \
+    wget \
+    && yum clean all
+
+# Build Python 3.9 from source (CentOS 7 has only Python 2.7)
+RUN wget -q https://www.python.org/ftp/python/3.9.18/Python-3.9.18.tgz \
+    && tar xzf Python-3.9.18.tgz \
+    && cd Python-3.9.18 \
+    && ./configure --enable-optimizations --with-ensurepip=install \
+    && make -j$(nproc) \
+    && make altinstall \
+    && cd .. && rm -rf Python-3.9.18*
+
+# Symlink python3.9 as python3
+RUN ln -sf /usr/local/bin/python3.9 /usr/local/bin/python3 \
+    && ln -sf /usr/local/bin/pip3.9 /usr/local/bin/pip3
+
+# Install PyInstaller and DDM dependencies
+RUN pip3 install --upgrade pip \
+    && pip3 install pyinstaller \
+    && pip3 install \
+        click==8.1.3 \
+        rich==12.6.0 \
+        pydantic==1.10.2 \
+        PyYAML==6.0 \
+        loguru==0.6.0 \
+        psutil==5.9.4 \
+        blake3==0.3.2
+
+WORKDIR /build
+
+CMD ["/bin/bash", "-c", "\
+    pip3 install --no-index --find-links /dev/null 2>/dev/null; \
+    chmod +x build_binary.sh && \
+    ./build_binary.sh && \
+    echo '' && \
+    echo '=== Binary compatibility check ===' && \
+    file dist/ddm && \
+    ldd dist/ddm 2>/dev/null || true && \
+    echo '' && \
+    echo 'Done. Binary is at dist/ddm' \
+"]

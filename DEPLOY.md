@@ -5,11 +5,13 @@
 1. [环境要求](#1-环境要求)
 2. [快速部署（在线环境）](#2-快速部署在线环境)
 3. [离线部署方案](#3-离线部署方案)
-4. [配置初始化](#4-配置初始化)
-5. [验证部署](#5-验证部署)
-6. [Git 更新与热更新](#6-git-更新与热更新)
-7. [权限与目录规划](#7-权限与目录规划)
-8. [故障排查](#8-故障排查)
+4. [二进制打包（CentOS 7.9）](#4-二进制打包centos-79)
+5. [配置初始化](#5-配置初始化)
+6. [验证部署](#6-验证部署)
+7. [Git 更新与热更新](#7-git-更新与热更新)
+8. [权限与目录规划](#8-权限与目录规划)
+9. [故障排查](#9-故障排查)
+10. [附录：从 macOS 开发到 CentOS 部署的完整流程](#10-附录从-macos-开发到-centos-部署的完整流程)
 
 ---
 
@@ -146,7 +148,75 @@ pip install --no-index --find-links /opt/ddm_offline_packages/ -r requirements_n
 
 ---
 
-## 4. 配置初始化
+## 4. 二进制打包（CentOS 7.9）
+
+DDM 支持通过 PyInstaller 打包为独立二进制文件，目标服务器无需安装 Python。
+
+> **重要**：PyInstaller 不支持交叉编译。二进制必须在与目标系统相同（或更旧）的 Linux 上构建。以下提供两种方案。
+
+### 方案 A：Docker 构建（macOS / 任意平台 → CentOS 7.9）
+
+在开发机上使用 Docker 模拟 CentOS 7.9 环境构建：
+
+```bash
+# 1. 构建 Docker 镜像（首次约 5 分钟，含编译 Python 3.9）
+docker build -t ddm-builder -f Dockerfile.build .
+
+# 2. 挂载源码目录，自动构建二进制
+docker run --rm -v $(pwd):/build ddm-builder
+```
+
+构建产物在 `dist/ddm`（Linux ELF 二进制）和 `dist/ddm.tar.gz`（部署包）。
+
+### 方案 B：在 CentOS 7.9 服务器上直接构建
+
+如果服务器上已有 Python 3.7+，可以直接构建：
+
+```bash
+# 1. 安装构建工具
+pip3 install pyinstaller
+pip3 install -r requirements.txt
+
+# 2. 执行构建
+chmod +x build_binary.sh
+./build_binary.sh
+```
+
+### 方案 C：从有网络的 CentOS 7.9 虚拟机构建
+
+1. 在 CentOS 7.9 VM 中安装 Python 3.9 和依赖
+2. 拉取 DDM 代码
+3. 执行 `./build_binary.sh`
+4. 将 `dist/ddm.tar.gz` 拷贝到离线服务器
+
+### 部署二进制
+
+构建完成后，将 `ddm.tar.gz` 传输到目标服务器：
+
+```bash
+# 在目标服务器上
+cd /opt
+tar -xzf ddm.tar.gz
+cd ddm_package
+cp config.yaml.example config.yaml
+vi config.yaml   # 修改 outgoing_root / repository_root / admins 等
+./ddm check
+```
+
+### 二进制更新
+
+修改代码后重新构建即可。二进制内已包含 Python 解释器和所有依赖，替换 `ddm` 文件即完成更新：
+
+```bash
+# 替换二进制
+cp /path/to/new/ddm /opt/ddm_package/ddm
+
+# 配置文件和数据不受影响（它们在二进制外部）
+```
+
+---
+
+## 5. 配置初始化
 
 ### 4.1 最小配置
 
@@ -218,7 +288,7 @@ chmod +x /opt/ddm/ddm
 
 ---
 
-## 5. 验证部署
+## 6. 验证部署
 
 ### 5.1 环境检查
 
@@ -270,7 +340,7 @@ rm repository/raw/.lock_TEST_PV_ITER
 
 ---
 
-## 6. Git 更新与热更新
+## 7. Git 更新与热更新
 
 ### 6.1 更新流程
 
@@ -306,7 +376,7 @@ git checkout HEAD~1
 
 ---
 
-## 7. 权限与目录规划
+## 8. 权限与目录规划
 
 ### 7.1 推荐目录布局
 
@@ -353,7 +423,7 @@ chmod g+s /nfs/eda/ddm_repo/release
 
 ---
 
-## 8. 故障排查
+## 9. 故障排查
 
 ### pip install 失败
 
@@ -411,4 +481,52 @@ grep "a1b2c3d4" logs/ddm_*.log
 
 # 搜索错误
 grep "ERROR\|WARNING" logs/ddm_*.log
+```
+
+---
+
+## 10. 附录：从 macOS 开发到 CentOS 7.9 部署的完整流程
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  macOS 开发机                                            │
+│  1. 编写 / 修改代码                                       │
+│  2. git commit                                           │
+│  3. docker build -t ddm-builder -f Dockerfile.build .    │
+│  4. docker run --rm -v $(pwd):/build ddm-builder         │
+│     → 生成 dist/ddm.tar.gz                               │
+│  5. scp dist/ddm.tar.gz root@centos7-server:/opt/        │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│  CentOS 7.9 离线服务器                                    │
+│  1. cd /opt && tar -xzf ddm.tar.gz                       │
+│  2. cd ddm_package && cp config.yaml.example config.yaml │
+│  3. vi config.yaml  # 设置 outgoing_root 等路径            │
+│  4. ./ddm check                                         │
+│  5. ./ddm submit -m CPU -t PV_ITER                       │
+│  6. ./ddm release -t PV_ITER -A -v V1                    │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 首次构建 Docker 镜像时间估算
+
+| 步骤 | 耗时 |
+|------|------|
+| 拉取 centos:7.9.2009 镜像 | ~30s |
+| yum 安装编译工具链 | ~2min |
+| 编译 Python 3.9.18 | ~5min |
+| pip 安装依赖 + PyInstaller | ~2min |
+| PyInstaller 打包 DDM | ~1min |
+| **总计** | **~10min** |
+
+后续构建利用 Docker 缓存，仅 PyInstaller 打包步骤需重新执行，约 **1 分钟**。
+
+### 构建产物
+
+```
+dist/
+├── ddm              # 独立二进制（~15-25 MB，含 Python 3.9 + 所有依赖）
+└── ddm.tar.gz       # 部署包（二进制 + 配置模板 + 文档）
 ```
