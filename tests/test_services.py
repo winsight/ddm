@@ -43,8 +43,9 @@ class TestConfig:
         cfg = Config("config/config.yaml")
 
         pv_gates = cfg.gates_for("PV_ITER")
-        assert len(pv_gates) == 1
+        assert len(pv_gates) == 2
         assert pv_gates[0].name == "verilog_syntax_check"
+        assert pv_gates[1].name == "drc_baseline_check"
 
         pv_users = cfg.release_users_for("PV_ITER")
         assert "w00949819" in pv_users

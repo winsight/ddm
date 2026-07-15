@@ -234,6 +234,7 @@ def submit(
     username: str,
     summary: str = "",
     progress=None,
+    gate_progress_callback=None,
 ) -> SubmitResult:
     """Execute the full submit pipeline.
 
@@ -361,7 +362,10 @@ def submit(
         # ---- run gates ----
         gate_defs = tag_cfg.gates
         if gate_defs:
-            gate_results = run_gates(gate_defs, str(raw_tag_dir), module, tag)
+            gate_results = run_gates(
+                gate_defs, str(raw_tag_dir), module, tag,
+                progress_callback=gate_progress_callback,
+            )
             for gr in gate_results:
                 if gr.passed:
                     storage.add_event(batch_uuid, EVENT_GATE_PASS, gr.name)

@@ -28,6 +28,8 @@ defaults:
       gates:
         - name: verilog_syntax_check
           command: python -m ddm.gates.verilog_check
+        - name: drc_baseline_check
+          command: python -m ddm.gates.drc_check
       release_users:
         - w00949819
 

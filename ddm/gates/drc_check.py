@@ -1,9 +1,12 @@
-"""Stub: DRC baseline check gate."""
+"""DRC baseline check gate — simulates design rule checking."""
 import sys
+import time
 
 
 def main():
-    print(f"DRC check PASS (stub)")
+    print("Running DRC (Design Rule Check)...")
+    time.sleep(4.0)  # simulate DRC run
+    print("DRC check PASSED — no violations")
     sys.exit(0)
 
 

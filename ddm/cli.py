@@ -120,6 +120,29 @@ def _submit(ctx, module, tag, user, summary):
     console.print(f"\n[bold cyan]Submit[/] module=[bold]{module}[/] tag=[bold]{tag}[/] user=[bold]{username}[/]")
     console.print(f"  Outgoing root: {cfg.outgoing_root}")
 
+    gate_tasks = {}
+
+    def gate_callback(gate_index, gate_name, status, total):
+        """Update Rich progress as each gate starts/completes."""
+        if status == "start":
+            tid = progress.add_task(
+                f"[yellow]  Gate [{gate_index + 1}/{total}]: {gate_name}[/]",
+                total=None,
+            )
+            gate_tasks[gate_name] = tid
+        elif status == "pass":
+            tid = gate_tasks.get(gate_name)
+            if tid is not None:
+                progress.update(tid, description=f"[green]  Gate [{gate_index + 1}/{total}]: {gate_name} ✓[/]",
+                                total=1, completed=1)
+                progress.remove_task(tid)
+        elif status == "fail":
+            tid = gate_tasks.get(gate_name)
+            if tid is not None:
+                progress.update(tid, description=f"[red]  Gate [{gate_index + 1}/{total}]: {gate_name} ✗[/]",
+                                total=1, completed=1)
+                progress.remove_task(tid)
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -136,6 +159,7 @@ def _submit(ctx, module, tag, user, summary):
             username=username,
             summary=summary,
             progress=progress,
+            gate_progress_callback=gate_callback,
         )
 
     if result.success:
