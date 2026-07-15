@@ -7,15 +7,15 @@ REPO_DIR="$SCRIPT_DIR/repository"
 
 echo "Cleaning runtime data..."
 
-# Remove raw data
+# Remove raw data (including hidden lock files)
 if [ -d "$REPO_DIR/raw" ]; then
-    rm -rf "$REPO_DIR/raw"/*
+    rm -rf "$REPO_DIR/raw"/* "$REPO_DIR/raw"/.lock_* 2>/dev/null || true
     echo "  cleaned raw/"
 fi
 
-# Remove ready data
+# Remove ready data (including hidden lock files)
 if [ -d "$REPO_DIR/ready" ]; then
-    rm -rf "$REPO_DIR/ready"/*
+    rm -rf "$REPO_DIR/ready"/* "$REPO_DIR/ready"/.lock_* 2>/dev/null || true
     echo "  cleaned ready/"
 fi
 

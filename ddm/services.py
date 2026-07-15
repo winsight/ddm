@@ -473,6 +473,17 @@ def release(
                 return ReleaseResult(False, msg)
 
     glock = config.global_lock_path()
+
+    # ---- fast-fail: check no module is currently submitting ----
+    raw_dir = config.raw_dir()
+    if raw_dir.exists():
+        active_locks = list(raw_dir.glob(f".lock_*_{tag}"))
+        if active_locks:
+            lock_names = [lck.name for lck in active_locks]
+            msg = f"模块正在提交中，Release 被阻断 (active locks: {lock_names})"
+            logger.warning(msg)
+            return ReleaseResult(False, msg)
+
     try:
         _acquire_lock(glock, "全局 Release 进行中")
     except LockError:
