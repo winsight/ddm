@@ -377,6 +377,8 @@ def _list_summary(storage, batches, tag, cfg):
     table.add_column("Module", style="bold")
     table.add_column("Status")
     table.add_column("Version")
+    table.add_column("User")
+    table.add_column("Summary")
     table.add_column("Files", justify="right")
     table.add_column("Size", justify="right")
     table.add_column("Δ vs prev", justify="right")
@@ -400,11 +402,15 @@ def _list_summary(storage, batches, tag, cfg):
         old_total = prev_total.get(b["batch_uuid"])
         if old_total is not None and old_total > 0:
             delta_str = _fmt_delta(total_size, old_total)
+        elif st == "RELEASED" and old_total is None:
+            delta_str = "[dim]首次[/]"
 
         table.add_row(
             b["module"],
             f"[{color}]{st}[/]",
             b.get("version", "") or "-",
+            b.get("username", "") or "-",
+            (b.get("summary", "") or "-")[:30],
             str(file_count),
             _fmt_size(total_size),
             delta_str,
@@ -415,7 +421,7 @@ def _list_summary(storage, batches, tag, cfg):
 
 
 def _list_verbose(storage, batches, tag):
-    """Per-file detail table with BLAKE3 and timestamp."""
+    """Per-file detail table with BLAKE3, timestamp, and file size delta."""
     for b in batches:
         files = storage.get_files(b["batch_uuid"])
         total_size = sum(f.get("file_size", 0) for f in files)
@@ -423,24 +429,47 @@ def _list_verbose(storage, batches, tag):
         status_colors = {"PENDING": "yellow", "SUBMITTED": "cyan", "RELEASED": "green", "FAILED": "red"}
         color = status_colors.get(st, "white")
 
+        # Build previous file sizes for delta
+        prev_file_sizes: dict = {}
+        if st == "RELEASED":
+            prev_batches = storage.list_batches(tag=tag, module=b["module"], status="RELEASED")
+            for pb in prev_batches:
+                if pb["batch_uuid"] != b["batch_uuid"] and pb["created_at"] < b["created_at"]:
+                    for pf in storage.get_files(pb["batch_uuid"]):
+                        pname = Path(pf["source_path"]).name if pf.get("source_path") else ""
+                        prev_file_sizes[pname] = pf.get("file_size", 0)
+                    break
+
         console.print(f"\n[bold]{b['module']}[/]  [{color}]{st}[/]  "
-                      f"v={b.get('version') or '-'}  "
+                      f"v={b.get('version') or '-'}  user={b.get('username','-')}  "
                       f"files={len(files)}  size={_fmt_size(total_size)}")
 
         ftable = Table(show_header=True, box=None)
         ftable.add_column("File", style="dim")
         ftable.add_column("Size", justify="right")
-        ftable.add_column("BLAKE3", style="dim", max_width=20)
+        ftable.add_column("Δ file", justify="right")
+        ftable.add_column("BLAKE3", style="dim", max_width=16)
         ftable.add_column("Timestamp")
 
         for f in files:
             fname = Path(f["source_path"]).name if f.get("source_path") else "-"
-            fsize = _fmt_size(f.get("file_size", 0))
+            fsize = f.get("file_size", 0)
             blake3_short = f.get("blake3_hash", "")[:12] if f.get("blake3_hash") else "-"
             mtime_val = f.get("source_mtime", 0)
             mtime_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime_val)) if mtime_val else "-"
 
-            ftable.add_row(fname, fsize, blake3_short, mtime_str)
+            # Per-file delta
+            old_fsize = prev_file_sizes.get(fname)
+            if old_fsize is not None and old_fsize > 0:
+                fdelta = _fmt_delta(fsize, old_fsize)
+            elif old_fsize is not None and old_fsize == 0:
+                fdelta = ""
+            elif not prev_file_sizes:
+                fdelta = ""
+            else:
+                fdelta = "[dim]新增[/]"
+
+            ftable.add_row(fname, _fmt_size(fsize), fdelta, blake3_short, mtime_str)
 
         console.print(ftable)
 

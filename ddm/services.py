@@ -77,6 +77,14 @@ SIZE_CHANGE_ALERT_RATIO = 0.50  # alert if size changes by ±50% or more
 # Lock helpers
 # ---------------------------------------------------------------------------
 
+def _write_op_log(log_path: Path, entry: str):
+    """Append a timestamped entry to an operation log file."""
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    ts = time.strftime("%Y-%m-%d %H:%M:%S")
+    with open(str(log_path), "a") as f:
+        f.write(f"[{ts}] {entry}\n")
+
+
 class LockError(Exception):
     """Raised when a lock prevents an operation."""
 
@@ -410,6 +418,15 @@ def submit(
             storage.add_event(batch_uuid, EVENT_SUBMITTED, "Batch ready for release")
             _step("Delivering", "Done", advance=True)
             logger.info(f"Submit complete: {batch_uuid} -> SUBMITTED")
+
+            # Write operation log to a0.outgoing/ for the owner
+            _write_op_log(
+                Path(config.outgoing_root) / ".ddm_submit.log",
+                f"submit  tag={tag}  module={module}  user={username}  "
+                f"files={len(source_files)}  size={total_size}  uuid={batch_uuid[:8]}  "
+                f"summary={summary or '-'}"
+            )
+
             return SubmitResult(batch_uuid, True, f"Submitted: {len(source_files)} files -> {ready_tag_dir}")
         else:
             storage.update_batch_status(batch_uuid, STATUS_FAILED)
@@ -755,6 +772,15 @@ def release(
                 shutil.rmtree(str(ready_mod_dir), ignore_errors=True)
 
         logger.info(f"Release complete: {tag}/{version} ({total_files} files)")
+
+        # Write operation log to release/<TAG>/
+        _write_op_log(
+            config.release_dir() / tag / ".ddm_release.log",
+            f"release  tag={tag}  version={version}  user={username}  "
+            f"files={total_files}  batches={len(batches)}  "
+            f"modules={sorted(set(b['module'] for b in batches))}"
+        )
+
         return ReleaseResult(True, f"Released {tag}/{version} ({total_files} files, {len(batches)} batches)",
                             version, integrity_warnings=integrity_warnings)
 
