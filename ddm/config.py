@@ -21,6 +21,7 @@ class GateDef(BaseModel):
 
 class TagConfig(BaseModel):
     description: str = ""
+    modules: List[str] = []
     file_patterns: List[str] = []
     gates: List[GateDef] = []
     release_users: List[str] = []
@@ -95,6 +96,10 @@ class Config:
         if self._model and "tag" in self._model.defaults:
             return list(self._model.defaults["tag"].keys())
         return []
+
+    def modules_for(self, tag: str) -> List[str]:
+        tc = self.tag_config(tag)
+        return tc.modules if tc else []
 
     def file_patterns_for(self, tag: str) -> List[str]:
         tc = self.tag_config(tag)

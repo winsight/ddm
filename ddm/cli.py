@@ -258,15 +258,18 @@ def _status(ctx, module, date_filter):
 
 @main.command(name="release")
 @click.option("-t", "--tag", required=True, type=TAG_TYPE, help=f"Tag: {', '.join(sorted(VALID_TAGS))}")
-@click.option("-A", "--all", "release_all", is_flag=True, help="Release all modules")
-@click.option("-m", "--module", default=None, help="Release specific module")
+@click.option("-A", "--all", "release_all", is_flag=True, help="Release all configured modules for this tag")
+@click.option("-m", "--module", default=None, help="Release specific module (auto-inherits others)")
 @click.option("-v", "--version", default="", help="Version label (default: date stamp)")
+@click.option("--inherit", is_flag=True, help="Allow -A to inherit unsubmitted modules from previous version")
 @click.pass_context
-def _release(ctx, tag, release_all, module, version):
+def _release(ctx, tag, release_all, module, version, inherit):
     """Release submitted data to release/ directory.
 
-    If the version already exists, modules are merged into it.
-    Otherwise a new version directory is created.
+    \b
+    -m MODULE: release one module, inherit rest from @latest.
+    -A:        release ALL configured modules (config.yaml modules list).
+               Fails if any module has no SUBMITTED data (use --inherit).
     """
     config_path = ctx.obj["config_path"]
     cfg, storage = _init_config_and_storage(config_path)
@@ -291,6 +294,7 @@ def _release(ctx, tag, release_all, module, version):
         module=module if not release_all else None,
         release_all=release_all,
         username=username,
+        allow_inherit=inherit,
     )
 
     if result.success:

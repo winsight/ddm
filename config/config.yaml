@@ -21,6 +21,7 @@ defaults:
   tag:
     PV_ITER:
       description: 物理验证迭代版
+      modules: [CPU, DDR]
       file_patterns:
         - "{user}_{module}.v.gz"
         - "{user}_{module}.hier.gds"
@@ -35,6 +36,7 @@ defaults:
 
     LVS_PASS:
       description: LVS 验证通过版
+      modules: [CPU, DDR]
       file_patterns:
         - "{user}_{module}.lvs.v.gz"
         - "{user}_{module}.lvs.gds"
@@ -46,6 +48,7 @@ defaults:
 
     BASE_CLEAN:
       description: Base DRC Clean 版
+      modules: [CPU, DDR]
       file_patterns:
         - "{user}_{module}.base.v.gz"
         - "{user}_{module}.base.gds"
@@ -57,6 +60,7 @@ defaults:
 
     PV_FINAL:
       description: 物理验证最终版
+      modules: [CPU, DDR]
       file_patterns:
         - "{user}_{module}.final.v.gz"
         - "{user}_{module}.final.hier.gds"
@@ -68,6 +72,7 @@ defaults:
 
     PI_ITER:
       description: 工艺改进迭代版
+      modules: [CPU, DDR]
       file_patterns:
         - "{user}_{module}.pi.v.pg"
         - "{user}_{module}.pi.hier.gds.gz"
@@ -79,6 +84,7 @@ defaults:
 
     PI_FINAL:
       description: PI 最终版
+      modules: [CPU, DDR]
       file_patterns:
         - "{user}_{module}.pi.final.v.pg"
         - "{user}_{module}.pi.final.gds.gz"

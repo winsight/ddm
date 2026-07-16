@@ -500,6 +500,7 @@ def release(
     release_all: bool = False,
     progress=None,
     username: str = "",
+    allow_inherit: bool = False,
 ) -> ReleaseResult:
     """Execute the release pipeline.
 
@@ -535,8 +536,29 @@ def release(
         logger.info(f"Appending modules to existing version: {version}")
 
     batches = storage.get_submitted_batches(tag=tag, module=module)
+
+    # ---- -A: verify all configured modules are accounted for ----
+    if release_all:
+        configured_modules = set(config.modules_for(tag))
+        submitted_modules = {b["module"] for b in batches}
+        missing = configured_modules - submitted_modules
+
+        if missing:
+            if not allow_inherit:
+                msg = (f"Full release (-A) requires all modules to be submitted. "
+                       f"Missing: {sorted(missing)}. "
+                       f"Use --inherit to carry them forward from previous version.")
+                logger.error(msg)
+                return ReleaseResult(False, msg)
+            logger.info(f"-A with --inherit: modules {sorted(missing)} will be "
+                        f"inherited from previous version")
+
     if not batches:
-        return ReleaseResult(False, f"No SUBMITTED batches for tag={tag}")
+        # This can happen with -A --inherit when everything inherits
+        if release_all and allow_inherit:
+            logger.info("No new SUBMITTED batches — all modules will inherit")
+        else:
+            return ReleaseResult(False, f"No SUBMITTED batches for tag={tag}")
 
     for batch in batches:
         batch_uuid = batch["batch_uuid"]
