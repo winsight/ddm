@@ -1,10 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for DDM standalone binary."""
 
+import os
 import sys
 from pathlib import Path
 
-_here = Path(__file__).resolve().parent
+_here = Path(os.getcwd())
 
 a = Analysis(
     [str(_here / "ddm_entry.py")],

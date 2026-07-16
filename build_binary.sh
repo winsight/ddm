@@ -33,7 +33,7 @@ python3 -c "import PyInstaller" 2>/dev/null || python -c "import PyInstaller" 2>
 }
 
 # Find the right python to use for PyInstaller
-PYTHON=$(which python3 2>/dev/null || which python 2>/dev/null)
+PYTHON=$(command -v python3 2>/dev/null || command -v python 2>/dev/null)
 echo "  Using:    $PYTHON"
 echo ""
 

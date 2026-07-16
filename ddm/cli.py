@@ -83,6 +83,24 @@ def _resolve_config_path(path: str) -> str:
     return path
 
 
+class TagParamType(click.ParamType):
+    """Click parameter type that provides completion for tag names."""
+    name = "tag"
+
+    def shell_complete(self, ctx, param, incomplete):
+        from ddm.config import Config
+        config_path = ctx.params.get("config", "config/config.yaml")
+        try:
+            cfg = Config(config_path)
+        except Exception:
+            cfg = None
+        tags = cfg.tag_names() if cfg else sorted(VALID_TAGS)
+        return [click.shell_completion.CompletionItem(t) for t in tags if t.startswith(incomplete)]
+
+
+TAG_TYPE = TagParamType()
+
+
 @click.group()
 @click.option(
     "-c", "--config",
@@ -95,6 +113,10 @@ def main(ctx, config):
     """DDM — EDA Data Delivery Manager.
 
     Manage PV/PI data delivery pipeline with gates, locks, and audit trails.
+
+    \b
+    Enable tab completion:
+      eval "$(_DDM_COMPLETE=bash_source ddm)"
     """
     ctx.ensure_object(dict)
     ctx.obj["config_path"] = _resolve_config_path(config)
@@ -108,8 +130,8 @@ def main(ctx, config):
 @main.command(name="submit")
 @click.option("-m", "--module", required=True, help="Module name (e.g. CPU, DDR)")
 @click.option(
-    "-t", "--tag",
-    required=True,
+    "-t", "--tag", "tag",
+    required=True, type=TAG_TYPE,
     help=f"Data tag: {', '.join(sorted(VALID_TAGS))}",
 )
 @click.option("-s", "--summary", default="", help="Submission summary / notes")
@@ -235,7 +257,7 @@ def _status(ctx, module, date_filter):
 
 
 @main.command(name="release")
-@click.option("-t", "--tag", required=True, help=f"Tag: {', '.join(sorted(VALID_TAGS))}")
+@click.option("-t", "--tag", required=True, type=TAG_TYPE, help=f"Tag: {', '.join(sorted(VALID_TAGS))}")
 @click.option("-A", "--all", "release_all", is_flag=True, help="Release all modules")
 @click.option("-m", "--module", default=None, help="Release specific module")
 @click.option("-v", "--version", default="", help="Version label (default: date stamp)")
@@ -247,7 +269,7 @@ def _release(ctx, tag, release_all, module, version):
     _setup_logger(cfg)
 
     if tag not in cfg.tag_names():
-        console.print(f"[red]Error:[/] Unknown tag '{tag}'")
+        console.print(f"[red]Error:[/] Unknown tag '{tag}'. Supported: {', '.join(cfg.tag_names())}")
         sys.exit(1)
 
     if not release_all and not module:
@@ -284,7 +306,7 @@ def _release(ctx, tag, release_all, module, version):
 
 
 @main.command(name="list")
-@click.option("-t", "--tag", required=True, help=f"Tag: {', '.join(sorted(VALID_TAGS))}")
+@click.option("-t", "--tag", required=True, type=TAG_TYPE, help=f"Tag: {', '.join(sorted(VALID_TAGS))}")
 @click.option("-A", "--all", "list_all", is_flag=True, help="List all modules")
 @click.option("-m", "--module", default=None, help="Filter by module")
 @click.pass_context
@@ -294,7 +316,7 @@ def _list(ctx, tag, list_all, module):
     cfg, storage = _init_config_and_storage(config_path)
 
     if tag not in cfg.tag_names():
-        console.print(f"[red]Error:[/] Unknown tag '{tag}'")
+        console.print(f"[red]Error:[/] Unknown tag '{tag}'. Supported: {', '.join(cfg.tag_names())}")
         sys.exit(1)
 
     batches = storage.list_batches(tag=tag, module=module if not list_all else None)
