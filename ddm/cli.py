@@ -653,6 +653,29 @@ def _complete_tags(ctx):
         pass
 
 
+@main.command("__complete_modules", hidden=True)
+@click.pass_context
+def _complete_modules(ctx):
+    """Print module names for csh complete script (one per line)."""
+    config_path = ctx.obj.get("config_path", "config/config.yaml")
+    seen = set()
+    try:
+        cfg = Config(config_path)
+        # modules from top-level modules: section (owners)
+        for mod in sorted(cfg._raw.get("modules", {})):
+            if mod not in seen:
+                click.echo(mod)
+                seen.add(mod)
+        # modules from each tag's modules list
+        for tag in cfg.tag_names():
+            for mod in cfg.modules_for(tag):
+                if mod not in seen:
+                    click.echo(mod)
+                    seen.add(mod)
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # version — detailed version info
 # ---------------------------------------------------------------------------
