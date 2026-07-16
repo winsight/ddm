@@ -255,9 +255,9 @@ defaults:
       description: 物理验证迭代版
       modules: [CPU, DDR]                       # 该 tag 管理的模块列表
       file_patterns:
-        - "{user}_{module}.v.gz"
-        - "{user}_{module}.hier.gds"
-        - "{user}_{module}.v.pg"
+        - "{module}.v.gz"
+        - "{module}.hier.gds"
+        - "{module}.v.pg"
       gates:
         - name: verilog_syntax_check
           command: python3 -m ddm.gates.verilog_check
@@ -276,7 +276,7 @@ defaults:
 | `repository_root` | 运行时仓库根目录 | `~/ddm_repo` |
 | `log_dir` | 日志输出目录 | `~/ddm_repo/logs` |
 | `defaults.tag.<NAME>.modules` | 该 tag 管理的模块列表（`-A` 发布时检查完整性） | `[CPU, DDR]` |
-| `defaults.tag.<NAME>.file_patterns` | 文件匹配模式，`{user}` `{module}` 占位符 | `["{user}_{module}.v.gz"]` |
+| `defaults.tag.<NAME>.file_patterns` | 文件匹配模式，`{user}` `{module}` 占位符 | `["{module}.v.gz"]` |
 | `defaults.tag.<NAME>.gates` | 门禁脚本列表 | 见上文 |
 | `defaults.tag.<NAME>.release_users` | 有权限发布该 tag 的用户列表 | `[user1, user2]` |
 

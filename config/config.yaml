@@ -35,9 +35,9 @@ defaults:
       description: 物理验证迭代版
       modules: [CPU, DDR]
       file_patterns:
-        - "{user}_{module}.v.gz"
-        - "{user}_{module}.hier.gds"
-        - "{user}_{module}.v.pg"
+        - "{module}.v.gz"
+        - "{module}.hier.gds"
+        - "{module}.v.pg"
       gates:
         - name: verilog_syntax_check
           command: python3 -m ddm.gates.verilog_check
@@ -50,8 +50,8 @@ defaults:
       description: LVS 验证通过版
       modules: [CPU, DDR]
       file_patterns:
-        - "{user}_{module}.lvs.v.gz"
-        - "{user}_{module}.lvs.gds"
+        - "{module}.lvs.v.gz"
+        - "{module}.lvs.gds"
       gates:
         - name: lvs_integrity_check
           command: python3 -m ddm.gates.lvs_check
@@ -62,8 +62,8 @@ defaults:
       description: Base DRC Clean 版
       modules: [CPU, DDR]
       file_patterns:
-        - "{user}_{module}.base.v.gz"
-        - "{user}_{module}.base.gds"
+        - "{module}.base.v.gz"
+        - "{module}.base.gds"
       gates:
         - name: drc_baseline_check
           command: python3 -m ddm.gates.drc_check
@@ -74,8 +74,8 @@ defaults:
       description: 物理验证最终版
       modules: [CPU, DDR]
       file_patterns:
-        - "{user}_{module}.final.v.gz"
-        - "{user}_{module}.final.hier.gds"
+        - "{module}.final.v.gz"
+        - "{module}.final.hier.gds"
       gates:
         - name: final_integrity_check
           command: python3 -m ddm.gates.final_check
@@ -86,8 +86,8 @@ defaults:
       description: 工艺改进迭代版
       modules: [CPU, DDR]
       file_patterns:
-        - "{user}_{module}.pi.v.pg"
-        - "{user}_{module}.pi.hier.gds.gz"
+        - "{module}.pi.v.pg"
+        - "{module}.pi.hier.gds.gz"
       gates:
         - name: pi_iter_check
           command: python3 -m ddm.gates.pi_check
@@ -98,8 +98,8 @@ defaults:
       description: PI 最终版
       modules: [CPU, DDR]
       file_patterns:
-        - "{user}_{module}.pi.final.v.pg"
-        - "{user}_{module}.pi.final.gds.gz"
+        - "{module}.pi.final.v.pg"
+        - "{module}.pi.final.gds.gz"
       gates:
         - name: pi_final_check
           command: python3 -m ddm.gates.pi_final_check

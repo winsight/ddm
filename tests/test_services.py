@@ -35,8 +35,8 @@ class TestConfig:
         from ddm.config import Config
         cfg = Config("config/config.yaml")
         patterns = cfg.file_patterns_for("PV_ITER")
-        assert "{user}_{module}.v.gz" in patterns
-        assert "{user}_{module}.hier.gds" in patterns
+        assert "{module}.v.gz" in patterns
+        assert "{module}.hier.gds" in patterns
 
     def test_gates_release_users(self):
         from ddm.config import Config
@@ -161,28 +161,28 @@ class TestFindSourceFiles:
         from ddm.services import find_source_files
         files = find_source_files(
             "a0.outgoing/{user}/{module}",
-            ["{user}_{module}.v.gz", "{user}_{module}.hier.gds"],
+            ["{module}.v.gz", "{module}.hier.gds"],
             "wangshuai",
             "CPU",
         )
-        assert any("wangshuai_CPU.v.gz" in f for f in files)
-        assert any("wangshuai_CPU.hier.gds" in f for f in files)
+        assert any("CPU.v.gz" in f for f in files)
+        assert any("CPU.hier.gds" in f for f in files)
 
     def test_find_different_user(self):
         from ddm.services import find_source_files
         files = find_source_files(
             "a0.outgoing/{user}/{module}",
-            ["{user}_{module}.v.gz"],
+            ["{module}.v.gz"],
             "w00949819",
             "CPU",
         )
-        assert any("w00949819_CPU.v.gz" in f for f in files)
+        assert any("CPU.v.gz" in f for f in files)
 
     def test_no_match(self):
         from ddm.services import find_source_files
         files = find_source_files(
             "a0.outgoing/{user}/{module}",
-            ["{user}_{module}.v.gz"],
+            ["{module}.v.gz"],
             "nonexistent",
             "CPU",
         )

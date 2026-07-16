@@ -125,7 +125,7 @@ lock_blocked  disk_full  failed
 ```
                     ┌──────────────────────────┐
                     │  a0.outgoing/{user}/     │  按 {user}/{module} 分目录
-                    │  {module}/               │  文件由 {user}_{module}.ext 命名
+                    │  {module}/               │  文件由 {module}.ext 命名
                     │  (只读)                  │
                     └──────────┬───────────────┘
                            │ submit 命令
@@ -243,8 +243,8 @@ defaults:
       description: 物理验证迭代版
       modules: [CPU, DDR]                       # 该 tag 管理的模块列表（-A 发布时检查）
       file_patterns:                            # 在 a0.outgoing/{user}/{module} 中匹配文件
-        - "{user}_{module}.v.gz"
-        - "{user}_{module}.hier.gds"
+        - "{module}.v.gz"
+        - "{module}.hier.gds"
       gates:                                    # 黑盒门禁，由 subprocess 调用
         - name: verilog_syntax_check
           command: python3 -m ddm.gates.verilog_check

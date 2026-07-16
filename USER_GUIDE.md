@@ -365,9 +365,9 @@ a0.outgoing/
 ```yaml
 PV_ITER:
   file_patterns:
-    - "{user}_{module}.v.gz"
-    - "{user}_{module}.hier.gds"
-    - "{user}_{module}.v.pg"
+    - "{module}.v.gz"
+    - "{module}.hier.gds"
+    - "{module}.v.pg"
 ```
 
 当执行 `submit -m CPU -t PV_ITER`（用户 `wangshuai`）时：

@@ -234,7 +234,7 @@ python -m ddm list -A -t PV_ITER
 
 ### 外部 owner 源目录
 
-`a0.outgoing` 可以在 DDM 仓库以外、由设计用户拥有的共享挂载点。通过 `outgoing_root` 指定其绝对路径；在每个 Tag 的 `file_patterns` 中使用 `{user}`、`{module}` 选择文件。例如 `outgoing_root: /nfs/eda/a0.outgoing` 与 `file_patterns: ["{user}_{module}.v.gz"]` 会让 `-u alice -m CPU` 从 `/nfs/eda/a0.outgoing/alice_CPU.v.gz` 只读提交。DDM 服务账号只需要此目录的读/执行权限；它只写入自身的 `repository/raw`、`ready`、`release`。
+`a0.outgoing` 可以在 DDM 仓库以外、由设计用户拥有的共享挂载点。通过 `outgoing_root` 指定其绝对路径；在每个 Tag 的 `file_patterns` 中使用 `{user}`、`{module}` 选择文件。例如 `outgoing_root: /nfs/eda/a0.outgoing` 与 `file_patterns: ["{module}.v.gz"]` 会让 `-u alice -m CPU` 从 `/nfs/eda/a0.outgoing/alice_CPU.v.gz` 只读提交。DDM 服务账号只需要此目录的读/执行权限；它只写入自身的 `repository/raw`、`ready`、`release`。
 
 `blake3` 是正式部署的必需依赖。若离线主机尚未完整安装依赖，程序会记录告警并暂时使用 BLAKE2b-256；生产交付前应通过 `pip install -r requirements.txt` 确认已启用 BLAKE3。
 
