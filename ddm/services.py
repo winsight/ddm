@@ -500,7 +500,6 @@ def release(
     release_all: bool = False,
     progress=None,
     username: str = "",
-    amend: bool = False,
 ) -> ReleaseResult:
     """Execute the release pipeline.
 
@@ -529,20 +528,11 @@ def release(
         version = f"{version}_{time.strftime('%Y%m%d')}"
 
     release_version_dir = config.release_dir() / tag / version
-
-    # ---- amend mode: add modules to existing version ----
-    if amend:
-        if not release_version_dir.is_dir():
-            msg = f"Cannot amend: version '{version}' does not exist. Run without --amend to create it."
-            logger.error(msg)
-            return ReleaseResult(False, msg)
-        logger.info(f"Amend mode: appending modules to existing version {version}")
-
-    # ---- new version: prevent duplicate ----
-    if not amend and release_version_dir.exists():
-        msg = f"Version '{version}' already exists for tag '{tag}'. Use --amend to add modules, or a different -v label for a new version."
-        logger.error(msg)
-        return ReleaseResult(False, msg)
+    is_new_version = not release_version_dir.is_dir()
+    if is_new_version:
+        logger.info(f"Creating new version: {version}")
+    else:
+        logger.info(f"Appending modules to existing version: {version}")
 
     batches = storage.get_submitted_batches(tag=tag, module=module)
     if not batches:
@@ -704,14 +694,12 @@ def release(
             return ReleaseResult(False, "Release aborted: post-check failed, staging cleaned", version)
 
         # ---- all passed: commit ----
-        if amend:
-            # Merge staging into existing version directory
+        if is_new_version:
+            os.rename(str(staging_dir), str(release_version_dir))
+        else:
             _merge_dirs(str(staging_dir), str(release_version_dir))
             shutil.rmtree(str(staging_dir), ignore_errors=True)
-            action = f"Amended {version}"
-        else:
-            os.rename(str(staging_dir), str(release_version_dir))
-            action = f"Released to {version}"
+        action = f"Released to {version}"
 
         for batch in batches:
             batch_uuid = batch["batch_uuid"]
@@ -725,11 +713,10 @@ def release(
             storage.add_event(batch_uuid, EVENT_RELEASE_DONE, action)
             storage.add_event(batch_uuid, EVENT_POST_CHECK_OK, "Final post-check passed")
 
-        if not amend:
-            latest_link = config.release_dir() / tag / "@latest"
-            if latest_link.is_symlink() or latest_link.exists():
-                latest_link.unlink()
-            latest_link.symlink_to(version, target_is_directory=True)
+        latest_link = config.release_dir() / tag / "@latest"
+        if latest_link.is_symlink() or latest_link.exists():
+            latest_link.unlink()
+        latest_link.symlink_to(version, target_is_directory=True)
 
         for batch in batches:
             batch_module = batch["module"]
