@@ -14,6 +14,30 @@
 
 ## 1. 快速开始
 
+### 启用 Tab 补全（可选，强烈推荐）
+
+```bash
+# 一次性设置（写入 ~/.zshrc，下次登录自动生效）
+mkdir -p ~/bin
+
+cat > ~/bin/ddm << 'EOF'
+#!/bin/bash
+cd /path/to/ddm_new && exec python -m ddm "$@"
+EOF
+chmod +x ~/bin/ddm
+
+echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
+echo 'eval "$(_DDM_COMPLETE=zsh_source ddm)" 2>/dev/null' >> ~/.zshrc
+
+# 当前终端立即生效
+export PATH="$HOME/bin:$PATH"
+eval "$(_DDM_COMPLETE=zsh_source ddm)"
+```
+
+之后输入 `ddm <TAB>` 自动补全命令（submit / status / release / list / check），输入 `ddm submit -t P<TAB>` 补全 tag 名称。
+
+> 已按上述方式配置后，下面所有 `python -m ddm` 命令都可以直接用 `ddm` 替代。
+
 ### 环境检查
 
 ```bash
@@ -91,11 +115,12 @@ Tag 是对数据类型的分组标签，由管理员在 `config/config.yaml` 中
 python -m ddm submit -m <MODULE> -t <TAG> [-s "备注"]
 ```
 
-| 参数 | 必填 | 说明 |
-|------|------|------|
-| `-m, --module` | 是 | 模块名，如 CPU、DDR |
-| `-t, --tag` | 是 | 数据标签（单选），如 PV_ITER |
-| `-s, --summary` | 否 | 提交备注，用引号包裹 |
+| 参数 | 缩写 | 必填 | 说明 |
+|------|------|------|------|
+| `--module` | `-m` | 是 | 模块名，如 CPU、DDR |
+| `--tag` | `-t` | 是 | 数据标签（单选），支持 Tab 补全 |
+| `--summary` | `-s` | 否 | 提交备注，用引号包裹 |
+| `--help` | `-h` | 否 | 显示帮助信息 |
 
 **执行流程：**
 
@@ -142,10 +167,11 @@ submit 期间终端显示一根进度条，依次经过 4 个阶段：
 python -m ddm status -m <MODULE> [-d <TIME>]
 ```
 
-| 参数 | 必填 | 说明 |
-|------|------|------|
-| `-m, --module` | 是 | 模块名 |
-| `-d, --date` | 否 | 时间过滤，如 `24h`、`3d`、`5m` |
+| 参数 | 缩写 | 必填 | 说明 |
+|------|------|------|------|
+| `--module` | `-m` | 是 | 模块名 |
+| `--date` | `-d` | 否 | 时间过滤，如 `24h`、`3d`、`5m` |
+| `--help` | `-h` | 否 | 显示帮助信息 |
 
 **输出示例：**
 
@@ -175,12 +201,13 @@ python -m ddm status -m <MODULE> [-d <TIME>]
 python -m ddm release -t <TAG> (-A | -m <MODULE>) [-v <LABEL>]
 ```
 
-| 参数 | 必填 | 说明 |
-|------|------|------|
-| `-t, --tag` | 是 | 数据标签（单选） |
-| `-A, --all` | 二选一 | 发布该 tag 下所有 SUBMITTED 模块 |
-| `-m, --module` | 二选一 | 发布指定模块 |
-| `-v, --version` | 否 | 版本标签，默认纯日期戳 |
+| 参数 | 缩写 | 必填 | 说明 |
+|------|------|------|------|
+| `--tag` | `-t` | 是 | 数据标签（单选），支持 Tab 补全 |
+| `--all` | `-A` | 二选一 | 发布该 tag 下所有 SUBMITTED 模块 |
+| `--module` | `-m` | 二选一 | 发布指定模块 |
+| `--version` | `-v` | 否 | 版本标签，默认纯日期戳 |
+| `--help` | `-h` | 否 | 显示帮助信息 |
 
 **执行流程：**
 
@@ -229,9 +256,12 @@ python -m ddm list -t <TAG> [-A | -m <MODULE>]
 
 | 参数 | 必填 | 说明 |
 |------|------|------|
-| `-t, --tag` | 是 | 数据标签 |
-| `-A, --all` | 二选一 | 列出所有模块 |
-| `-m, --module` | 二选一 | 列出指定模块 |
+| 参数 | 缩写 | 必填 | 说明 |
+|------|------|------|------|
+| `--tag` | `-t` | 是 | 数据标签（单选），支持 Tab 补全 |
+| `--all` | `-A` | 二选一 | 列出所有模块 |
+| `--module` | `-m` | 二选一 | 列出指定模块 |
+| `--help` | `-h` | 否 | 显示帮助信息 |
 
 ### 3.5 check — 环境检查
 

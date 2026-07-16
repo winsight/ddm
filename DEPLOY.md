@@ -268,7 +268,29 @@ outgoing_root: /nfs/eda/a0.outgoing
 repository_root: /nfs/eda/ddm_repo
 ```
 
-### 4.4 全局软链接部署
+### 5.4 Tab 补全设置
+
+```bash
+# 创建 ddm 命令 wrapper
+mkdir -p ~/bin
+cat > ~/bin/ddm << 'EOF'
+#!/bin/bash
+cd /opt/ddm && exec python -m ddm "$@"
+EOF
+chmod +x ~/bin/ddm
+
+# 添加到 shell 配置（bash 用户改为 ~/.bashrc）
+echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
+echo 'eval "$(_DDM_COMPLETE=zsh_source ddm)" 2>/dev/null' >> ~/.zshrc
+
+# 当前终端生效
+export PATH="$HOME/bin:$PATH"
+eval "$(_DDM_COMPLETE=zsh_source ddm)"
+```
+
+此后输入 `ddm <TAB>` 自动补全命令名、`ddm submit -t <TAB>` 补全 tag 名。
+
+### 5.5 全局软链接部署
 
 在 `/usr/local/bin/` 创建软链接，使 `ddm` 命令全局可用：
 
