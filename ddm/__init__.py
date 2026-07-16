@@ -1,3 +1,3 @@
 """DDM - EDA Data Delivery Manager."""
 
-__version__ = "0.1.0"
+from ddm.version import __version__  # noqa: F401 — single source of truth

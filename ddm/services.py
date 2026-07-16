@@ -273,6 +273,18 @@ def submit(
     if not patterns:
         return SubmitResult("", False, f"No file_patterns defined for tag: {tag}")
 
+    # ---- fast-fail: module ownership ----
+    if not config.is_module_owner(module, username):
+        owners = config.module_owners(module)
+        if owners:
+            msg = (f"无权提交模块 '{module}'。该模块的 owner 为: {', '.join(owners)}"
+                   f"。如需提交请联系管理员。")
+        else:
+            msg = (f"模块 '{module}' 未在 config.yaml 中配置 owners 列表。"
+                   f"请先在 modules.{module}.owners 中添加可提交用户。")
+        logger.warning(msg)
+        return SubmitResult("", False, msg)
+
     # ---- fast-fail: global lock ----
     glock = config.global_lock_path()
     if glock.exists():

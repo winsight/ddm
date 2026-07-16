@@ -247,7 +247,7 @@ defaults:
         - "{user}_{module}.hier.gds"
       gates:                                    # 黑盒门禁，由 subprocess 调用
         - name: verilog_syntax_check
-          command: python -m ddm.gates.verilog_check
+          command: python3 -m ddm.gates.verilog_check
       release_users:                            # 发布授权白名单
         - w00949819
 ```

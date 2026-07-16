@@ -52,6 +52,44 @@ class TestConfig:
         pi_users = cfg.release_users_for("PI_ITER")
         assert "wangshuai" in pi_users
 
+    def test_module_owners(self):
+        from ddm.config import Config
+        cfg = Config("config/config.yaml")
+
+        # CPU: configured with wangshuai + zhangsan
+        cpu_owners = cfg.module_owners("CPU")
+        assert "wangshuai" in cpu_owners
+        assert "zhangsan" in cpu_owners
+
+        # DDR: configured with lisi + wangshuai
+        ddr_owners = cfg.module_owners("DDR")
+        assert "lisi" in ddr_owners
+        assert "wangshuai" in ddr_owners
+
+        # Unknown module: empty list
+        assert cfg.module_owners("NONEXISTENT") == []
+
+    def test_is_module_owner(self):
+        from ddm.config import Config
+        cfg = Config("config/config.yaml")
+
+        # Owner can submit
+        assert cfg.is_module_owner("CPU", "wangshuai") is True
+        assert cfg.is_module_owner("CPU", "zhangsan") is True
+
+        # Admin bypasses owner check
+        assert cfg.is_module_owner("CPU", "w00949819") is True
+        assert cfg.is_module_owner("CPU", "lisi") is True
+
+        # Non-owner, non-admin: denied
+        assert cfg.is_module_owner("CPU", "randomuser") is False
+
+        # admin can submit any module even unconfigured
+        assert cfg.is_module_owner("NONEXISTENT", "w00949819") is True
+
+        # non-admin on unconfigured module: denied
+        assert cfg.is_module_owner("NONEXISTENT", "randomuser") is False
+
 
 class TestStorage:
     @pytest.fixture

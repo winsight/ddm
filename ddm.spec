@@ -16,7 +16,7 @@ a = Analysis(
     ],
     hiddenimports=[
         "ddm",
-        "ddm.cli",
+        "ddm.cli", "ddm.version",
         "ddm.config",
         "ddm.services",
         "ddm.storage",

@@ -14,35 +14,31 @@
 
 ## 1. 快速开始
 
-### 启用 Tab 补全（可选，强烈推荐）
+### 启用 csh/tcsh Tab 补全
 
-```bash
-# 一次性设置（写入 ~/.zshrc，下次登录自动生效）
-mkdir -p ~/bin
-
-cat > ~/bin/ddm << 'EOF'
-#!/bin/bash
-cd /path/to/ddm_new && exec python -m ddm "$@"
-EOF
-chmod +x ~/bin/ddm
-
-echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
-echo 'eval "$(_DDM_COMPLETE=zsh_source ddm)" 2>/dev/null' >> ~/.zshrc
+```csh
+# 写入 ~/.cshrc（下次登录自动生效）
+alias ddm "python3 -m ddm"
+source ~/ddm/ddm.complete.csh
 
 # 当前终端立即生效
-export PATH="$HOME/bin:$PATH"
-eval "$(_DDM_COMPLETE=zsh_source ddm)"
+alias ddm "python3 -m ddm"
+source ~/ddm/ddm.complete.csh
 ```
 
-之后输入 `ddm <TAB>` 自动补全命令（submit / status / release / list / check），输入 `ddm submit -t P<TAB>` 补全 tag 名称。
+补全效果：
+- `ddm <TAB>` → 列出 submit / status / release / list / check / version
+- `ddm submit -t <TAB>` → 列出所有配置的 tag（实时读取 config.yaml）
+- `ddm submit -m <TAB>` → 提示输入模块名
+- `ddm release -t <TAB>` → 同上
 
-> 已按上述方式配置后，下面所有 `python -m ddm` 命令都可以直接用 `ddm` 替代。
+> 已按上述方式配置后，下面所有 `python3 -m ddm` 命令都可以直接用 `ddm` 替代。
 
 ### 环境检查
 
 ```bash
 cd /path/to/ddm_new
-python -m ddm check
+python3 -m ddm check
 ```
 
 输出示例：
@@ -61,13 +57,13 @@ DDM Environment Check
 
 ```bash
 # 第 1 步：提交模块数据（自动通过门禁校验）
-python -m ddm submit -m CPU -t PV_ITER -s "首次 PV 迭代提交"
+python3 -m ddm submit -m CPU -t PV_ITER -s "首次 PV 迭代提交"
 
 # 第 2 步：查看提交状态
-python -m ddm status -m CPU
+python3 -m ddm status -m CPU
 
 # 第 3 步：发布到共享归档
-python -m ddm release -t PV_ITER -A -v V1
+python3 -m ddm release -t PV_ITER -A -v V1
 ```
 
 ---
@@ -112,7 +108,7 @@ Tag 是对数据类型的分组标签，由管理员在 `config/config.yaml` 中
 ### 3.1 submit — 提交数据
 
 ```bash
-python -m ddm submit -m <MODULE> -t <TAG> [-s "备注"]
+python3 -m ddm submit -m <MODULE> -t <TAG> [-s "备注"]
 ```
 
 | 参数 | 缩写 | 必填 | 说明 |
@@ -140,13 +136,13 @@ python -m ddm submit -m <MODULE> -t <TAG> [-s "备注"]
 
 ```bash
 # 提交 CPU 模块的 PV_ITER 数据
-python -m ddm submit -m CPU -t PV_ITER -s "RTL 综合完成，首次 PV 检查"
+python3 -m ddm submit -m CPU -t PV_ITER -s "RTL 综合完成，首次 PV 检查"
 
 # 提交 DDR 模块的 LVS 数据
-python -m ddm submit -m DDR -t LVS_PASS -s "LVS clean，无 short/open"
+python3 -m ddm submit -m DDR -t LVS_PASS -s "LVS clean，无 short/open"
 
 # 提交 CPU 模块的 PI 数据
-python -m ddm submit -m CPU -t PI_ITER -s "工艺窗口优化 v3"
+python3 -m ddm submit -m CPU -t PI_ITER -s "工艺窗口优化 v3"
 ```
 
 **进度条说明：**
@@ -165,7 +161,7 @@ submit 期间终端显示一根进度条，依次经过 4 个阶段：
 ### 3.2 status — 查看状态
 
 ```bash
-python -m ddm status -m <MODULE> [-d <TIME>]
+python3 -m ddm status -m <MODULE> [-d <TIME>]
 ```
 
 | 参数 | 缩写 | 必填 | 说明 |
@@ -199,7 +195,7 @@ python -m ddm status -m <MODULE> [-d <TIME>]
 ### 3.3 release — 发布数据
 
 ```bash
-python -m ddm release -t <TAG> (-A | -m <MODULE>) [-v <LABEL>] [--inherit]
+python3 -m ddm release -t <TAG> (-A | -m <MODULE>) [-v <LABEL>] [--inherit]
 ```
 
 | 参数 | 缩写 | 必填 | 说明 |
@@ -232,16 +228,16 @@ python -m ddm release -t <TAG> (-A | -m <MODULE>) [-v <LABEL>] [--inherit]
 
 ```bash
 # 发布所有 PV_ITER 模块，版本 V1
-python -m ddm release -t PV_ITER -A -v V1
+python3 -m ddm release -t PV_ITER -A -v V1
 
 # 只发布 CPU 模块，版本 V2（其他模块从 V1 继承）
-python -m ddm release -t PV_ITER -m CPU -v V2
+python3 -m ddm release -t PV_ITER -m CPU -v V2
 
 # 发布所有模块，缺失的模块从上一版本继承
-python -m ddm release -t PV_ITER -A -v V3 --inherit
+python3 -m ddm release -t PV_ITER -A -v V3 --inherit
 
 # 不指定版本，使用当日日期
-python -m ddm release -t PI_ITER -m CPU
+python3 -m ddm release -t PI_ITER -m CPU
 ```
 
 **输出示例（有完整性告警）：**
@@ -258,7 +254,7 @@ python -m ddm release -t PI_ITER -m CPU
 ### 3.4 list — 列表查看
 
 ```bash
-python -m ddm list -t <TAG> [-A | -m <MODULE>] [-v]
+python3 -m ddm list -t <TAG> [-A | -m <MODULE>] [-v]
 ```
 
 | 参数 | 缩写 | 必填 | 说明 |
@@ -276,7 +272,7 @@ python -m ddm list -t <TAG> [-A | -m <MODULE>] [-v]
 ### 3.5 check — 环境检查
 
 ```bash
-python -m ddm check
+python3 -m ddm check
 ```
 
 验证配置加载、BLAKE3 可用性、SQLite 就绪、目录存在性、psutil 可用性。
@@ -289,24 +285,24 @@ python -m ddm check
 
 ```bash
 # 工程师提交数据
-python -m ddm submit -m CPU -t PV_ITER -s "RTL v2.1 综合"
-python -m ddm submit -m DDR -t PV_ITER -s "DDR PHY 更新"
+python3 -m ddm submit -m CPU -t PV_ITER -s "RTL v2.1 综合"
+python3 -m ddm submit -m DDR -t PV_ITER -s "DDR PHY 更新"
 
 # 查看状态
-python -m ddm status -m CPU
-python -m ddm list -t PV_ITER -A
+python3 -m ddm status -m CPU
+python3 -m ddm list -t PV_ITER -A
 
 # 专项管理员发布
-python -m ddm release -t PV_ITER -A -v V3
+python3 -m ddm release -t PV_ITER -A -v V3
 ```
 
 ### 场景 B：多 Tag 并行提交
 
 ```bash
 # 同一模块可以不同 tag 并行提交
-python -m ddm submit -m CPU -t PV_ITER &
-python -m ddm submit -m CPU -t LVS_PASS &
-python -m ddm submit -m CPU -t PI_ITER &
+python3 -m ddm submit -m CPU -t PV_ITER &
+python3 -m ddm submit -m CPU -t LVS_PASS &
+python3 -m ddm submit -m CPU -t PI_ITER &
 wait
 ```
 
@@ -314,23 +310,23 @@ wait
 
 ```bash
 # 提交后看到 FAILED 状态
-python -m ddm status -m GPU
+python3 -m ddm status -m GPU
 
 # 查看详细日志
 cat logs/ddm_2026-07-16.log | grep "GPU"
 
 # 修复问题后重新提交（新批次，新 UUID）
-python -m ddm submit -m GPU -t PV_ITER -s "修复门禁问题 v2"
+python3 -m ddm submit -m GPU -t PV_ITER -s "修复门禁问题 v2"
 ```
 
 ### 场景 D：增量发布
 
 ```bash
 # 第一轮：只发布 CPU
-python -m ddm release -t PV_ITER -m CPU -v V1
+python3 -m ddm release -t PV_ITER -m CPU -v V1
 
 # 第二轮：DDR 也准备好了，追加发布（V2 会继承 V1 中的 CPU）
-python -m ddm release -t PV_ITER -m DDR -v V2
+python3 -m ddm release -t PV_ITER -m DDR -v V2
 # @latest 现在指向 V2，包含 CPU（继承） + DDR（新增）
 # V1 的 CPU 数据仍在 release/PV_ITER/V1/ 中独立保留
 ```
@@ -394,7 +390,7 @@ PV_ITER:
 门禁以 subprocess 方式调用，接收三个参数：
 
 ```bash
-python -m ddm.gates.verilog_check <raw_dir> <module> <tag>
+python3 -m ddm.gates.verilog_check <raw_dir> <module> <tag>
 ```
 
 - **退出码 0**：通过
@@ -404,12 +400,12 @@ python -m ddm.gates.verilog_check <raw_dir> <module> <tag>
 
 | 门禁名称 | 命令 | 说明 |
 |----------|------|------|
-| verilog_syntax_check | `python -m ddm.gates.verilog_check` | Verilog 语法检查 |
-| drc_baseline_check | `python -m ddm.gates.drc_check` | DRC 基线检查 |
-| lvs_integrity_check | `python -m ddm.gates.lvs_check` | LVS 完整性检查 |
-| final_integrity_check | `python -m ddm.gates.final_check` | 最终签核检查 |
-| pi_iter_check | `python -m ddm.gates.pi_check` | PI 迭代验证 |
-| pi_final_check | `python -m ddm.gates.pi_final_check` | PI 最终签核 |
+| verilog_syntax_check | `python3 -m ddm.gates.verilog_check` | Verilog 语法检查 |
+| drc_baseline_check | `python3 -m ddm.gates.drc_check` | DRC 基线检查 |
+| lvs_integrity_check | `python3 -m ddm.gates.lvs_check` | LVS 完整性检查 |
+| final_integrity_check | `python3 -m ddm.gates.final_check` | 最终签核检查 |
+| pi_iter_check | `python3 -m ddm.gates.pi_check` | PI 迭代验证 |
+| pi_final_check | `python3 -m ddm.gates.pi_final_check` | PI 最终签核 |
 
 > 注：当前为 stub 实现（含模拟延时），生产环境需替换为实际检查脚本。
 
@@ -422,7 +418,7 @@ python -m ddm.gates.verilog_check <raw_dir> <module> <tag>
 PV_ITER:
   gates:
     - name: my_new_check
-      command: python -m ddm.gates.my_new_check
+      command: python3 -m ddm.gates.my_new_check
 ```
 
 ---
@@ -436,6 +432,28 @@ PV_ITER:
 ```
 
 **原因**：专项管理员正在执行 `release`，全局锁被持有。**解决**：等待 release 完成（通常几秒到几十秒），然后重试。
+
+### Q: submit 被拒绝 "无权提交模块"
+
+```
+✗ Submit failed: 无权提交模块 'CPU'。该模块的 owner 为: wangshuai, zhangsan。如需提交请联系管理员。
+```
+
+**原因**：你不在该模块的 `owners` 列表中，也不是 `admins`。**解决**：联系管理员在 `config/config.yaml` 的 `modules.<NAME>.owners` 中添加你的用户名。
+
+### Q: submit 被拒绝 "未配置 owners"
+
+```
+✗ Submit failed: 模块 'GPU' 未在 config.yaml 中配置 owners 列表。
+```
+
+**原因**：该模块尚未在 config 中注册。**解决**：在 `config/config.yaml` 中添加：
+
+```yaml
+modules:
+  GPU:
+    owners: [yourname, otheruser]
+```
 
 ### Q: submit 被拒绝 "模块正在提交"
 

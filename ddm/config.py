@@ -14,6 +14,11 @@ from pydantic import BaseModel, ValidationError, validator
 VALID_TAGS = {"PV_ITER", "LVS_PASS", "BASE_CLEAN", "PV_FINAL", "PI_ITER", "PI_FINAL"}
 
 
+class ModuleOwnerConfig(BaseModel):
+    """Per-module submit permission: which users can submit this module."""
+    owners: List[str] = []
+
+
 class GateDef(BaseModel):
     name: str
     command: str
@@ -28,6 +33,7 @@ class TagConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
+    modules: Dict[str, ModuleOwnerConfig] = {}
     admins: List[str] = []
     outgoing_root: str = "./a0.outgoing"
     repository_root: str = "./repository"
@@ -73,6 +79,19 @@ class Config:
     @property
     def admins(self) -> List[str]:
         return self._model.admins if self._model else []
+
+    def module_owners(self, module: str) -> List[str]:
+        """Return list of users who can submit data for this module."""
+        if self._model and module in self._model.modules:
+            return self._model.modules[module].owners
+        return []
+
+    def is_module_owner(self, module: str, user: str) -> bool:
+        """Check whether user is allowed to submit this module."""
+        # Admins bypass owner check
+        if user in self.admins:
+            return True
+        return user in self.module_owners(module)
 
     @property
     def outgoing_root(self) -> str:

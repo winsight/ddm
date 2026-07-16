@@ -19,7 +19,7 @@ else:
 # Add the root to sys.path so ddm package can be imported
 sys.path.insert(0, str(_ROOT))
 
-from ddm.cli import main
+from ddm.cli import _cli_entry
 
 if __name__ == "__main__":
-    main()
+    _cli_entry()

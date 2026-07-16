@@ -1,6 +1,17 @@
 # DDM (Data Delivery Manager) Configuration
 # ==========================================
 
+# ══════════════════════════════════════════════════════
+# 权限控制：模块 → 可提交该模块的用户列表
+# ══════════════════════════════════════════════════════
+# module 为主键：一次 O(1) 查询即可判定某用户能否提交某模块。
+# admins 中的用户不受此限制，可以提交所有模块。
+modules:
+  CPU:
+    owners: [wangshuai, zhangsan]
+  DDR:
+    owners: [lisi, wangshuai]
+
 admins:
   - wangshuai
   - w00949819
@@ -29,9 +40,9 @@ defaults:
         - "{user}_{module}.v.pg"
       gates:
         - name: verilog_syntax_check
-          command: python -m ddm.gates.verilog_check
+          command: python3 -m ddm.gates.verilog_check
         - name: drc_baseline_check
-          command: python -m ddm.gates.drc_check
+          command: python3 -m ddm.gates.drc_check
       release_users:
         - w00949819
 
@@ -43,7 +54,7 @@ defaults:
         - "{user}_{module}.lvs.gds"
       gates:
         - name: lvs_integrity_check
-          command: python -m ddm.gates.lvs_check
+          command: python3 -m ddm.gates.lvs_check
       release_users:
         - wangshuai
 
@@ -55,7 +66,7 @@ defaults:
         - "{user}_{module}.base.gds"
       gates:
         - name: drc_baseline_check
-          command: python -m ddm.gates.drc_check
+          command: python3 -m ddm.gates.drc_check
       release_users:
         - wangshuai
 
@@ -67,7 +78,7 @@ defaults:
         - "{user}_{module}.final.hier.gds"
       gates:
         - name: final_integrity_check
-          command: python -m ddm.gates.final_check
+          command: python3 -m ddm.gates.final_check
       release_users:
         - w00949819
 
@@ -79,7 +90,7 @@ defaults:
         - "{user}_{module}.pi.hier.gds.gz"
       gates:
         - name: pi_iter_check
-          command: python -m ddm.gates.pi_check
+          command: python3 -m ddm.gates.pi_check
       release_users:
         - wangshuai
 
@@ -91,6 +102,6 @@ defaults:
         - "{user}_{module}.pi.final.gds.gz"
       gates:
         - name: pi_final_check
-          command: python -m ddm.gates.pi_final_check
+          command: python3 -m ddm.gates.pi_final_check
       release_users:
         - wangshuai

@@ -104,16 +104,23 @@ cp USER_GUIDE.md DEPLOY.md ARCHITECTURE.md "$PACKAGE_DIR/" 2>/dev/null || true
 cat > "$PACKAGE_DIR/install.sh" << 'INSTALL_SCRIPT'
 #!/bin/bash
 # DDM offline install script — run on the target CentOS 7.9 server
+# Uses --user to install without root privileges
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "=== DDM Offline Install ==="
+echo "=== DDM Offline Install (non-root) ==="
 
-# Install Python dependencies from local packages
-echo "Installing Python packages..."
-pip3 install --no-index --find-links offline_packages/ -r requirements.txt 2>&1 | tail -5
+# Install Python dependencies from local packages (--user, no root needed)
+echo "Installing Python packages to ~/.local/ ..."
+pip3 install --user --no-index --find-links offline_packages/ -r requirements.txt 2>&1 | tail -5
+
+# Ensure ~/.local/bin is in PATH for csh users
+if ! echo "$PATH" | grep -q ".local/bin"; then
+    echo 'set path = ($HOME/.local/bin $path)' >> ~/.cshrc 2>/dev/null || true
+    echo "  Added ~/.local/bin to ~/.cshrc"
+fi
 
 # Create config if not exists
 if [ ! -f config/config.yaml ]; then
@@ -126,8 +133,9 @@ echo "=== Install Complete ==="
 echo ""
 echo "Next steps:"
 echo "  1. Edit config/config.yaml"
-echo "  2. python3 -m ddm check"
-echo "  3. python3 -m ddm submit -m <MODULE> -t <TAG>"
+echo "  2. source ~/.cshrc    (or re-login)"
+echo "  3. python3 -m ddm check"
+echo "  4. python3 -m ddm submit -m <MODULE> -t <TAG>"
 echo ""
 echo "Or if the binary was included:"
 echo "  ./ddm check"
@@ -164,7 +172,7 @@ echo "  Deploy archive: dist/ddm_deploy.tar.gz ($(du -sh dist/ddm_deploy.tar.gz 
 echo "  Offline wheels: dist/offline_packages/ ($PACKAGE_COUNT packages)"
 echo ""
 echo "Deploy to target server:"
-echo "  scp dist/ddm_deploy.tar.gz user@centos7-server:/opt/"
+echo "  scp dist/ddm_deploy.tar.gz user@centos7-server:~/"
 echo "  ssh user@centos7-server"
-echo "  cd /opt && tar -xzf ddm_deploy.tar.gz"
+echo "  cd ~ && tar -xzf ddm_deploy.tar.gz"
 echo "  cd ddm_deploy && ./install.sh"

@@ -17,6 +17,7 @@ from rich.table import Table
 from ddm.config import VALID_TAGS, Config
 from ddm.services import HAS_BLAKE3, release, submit
 from ddm.storage import Storage
+from ddm.version import __version__
 
 console = Console()
 
@@ -113,10 +114,6 @@ def main(ctx, config):
     """DDM — EDA Data Delivery Manager.
 
     Manage PV/PI data delivery pipeline with gates, locks, and audit trails.
-
-    \b
-    Enable tab completion:
-      eval "$(_DDM_COMPLETE=bash_source ddm)"
     """
     ctx.ensure_object(dict)
     ctx.obj["config_path"] = _resolve_config_path(config)
@@ -591,15 +588,34 @@ def check(ctx):
         console.print(f"  [red]✗[/] SQLite error: {e}")
 
     # Directories
-    for label, path in [
-        ("Outgoing root", cfg.outgoing_root),
-        ("Repository root", cfg.repository_root),
+    outgoing_path = cfg.outgoing_root
+    # Expand {user} placeholder with current user for existence check
+    _test_user = os.environ.get("USER", "unknown")
+    _expanded = outgoing_path.replace("{user}", _test_user).replace("{module}", "CPU")
+    _expanded_parent = Path(_expanded).parent
+    # Fall back to outgoing_root without module for checking
+    _base = outgoing_path.split("{module}")[0].replace("{user}", _test_user).rstrip("/")
+    _base_path = Path(_base)
+    # Choose the most appropriate path to check
+    if _base_path.exists():
+        _check_path = _base_path
+        _exists = True
+    elif _expanded_parent.exists():
+        _check_path = _expanded_parent
+        _exists = True
+    else:
+        _check_path = Path(outgoing_path)
+        _exists = _check_path.exists()
+
+    for label, path, exists, show_path in [
+        ("Outgoing root", outgoing_path, _exists, str(_check_path.resolve())),
+        ("Repository root", cfg.repository_root, Path(cfg.repository_root).exists(),
+         str(Path(cfg.repository_root).resolve())),
     ]:
-        p = Path(path)
-        if p.exists():
-            console.print(f"  [green]✓[/] {label}: {p.resolve()}")
+        if exists:
+            console.print(f"  [green]✓[/] {label}: {show_path}")
         else:
-            console.print(f"  [yellow]![/] {label} (not created yet): {p.resolve()}")
+            console.print(f"  [yellow]![/] {label} (not created yet): {show_path}")
 
     # psutil
     try:
@@ -611,5 +627,72 @@ def check(ctx):
     console.print("\n[bold green]Check complete.[/]")
 
 
-if __name__ == "__main__":
+# ---------------------------------------------------------------------------
+# hidden completion helpers for csh/tcsh
+# ---------------------------------------------------------------------------
+
+
+@main.command("__complete_commands", hidden=True)
+def _complete_commands():
+    """Print command names for csh complete script (one per line)."""
+    for cmd in sorted(main.commands):
+        if not cmd.startswith("_"):
+            click.echo(cmd)
+
+
+@main.command("__complete_tags", hidden=True)
+@click.pass_context
+def _complete_tags(ctx):
+    """Print tag names for csh complete script (one per line)."""
+    config_path = ctx.obj.get("config_path", "config/config.yaml")
+    try:
+        cfg = Config(config_path)
+        for tag in sorted(cfg.tag_names()):
+            click.echo(tag)
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# version — detailed version info
+# ---------------------------------------------------------------------------
+
+
+@main.command("version")
+def _version():
+    """Print detailed version information."""
+    import platform
+    import subprocess
+
+    console.print(f"[bold cyan]ddm[/] [green]{__version__}[/]")
+
+    # Git hash (best-effort: may not be available in binary deploy)
+    try:
+        here = Path(__file__).resolve().parent.parent
+        git_hash = subprocess.check_output(
+            ["git", "-C", str(here), "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        console.print(f"  git:      {git_hash}")
+    except Exception:
+        pass
+
+    console.print(f"  python:   {platform.python_version()}")
+    console.print(f"  platform: {platform.system()} {platform.machine()}")
+    console.print(f"  blake3:   {'available' if HAS_BLAKE3 else 'fallback (blake2b)'}")
+
+
+def _cli_entry():
+    """Top-level entry: handle -V/--version before Click parsing."""
+    if len(sys.argv) >= 2 and sys.argv[1] in ("-V", "--version"):
+        import platform as _platform
+        console.print(f"[bold cyan]ddm[/] [green]{__version__}[/]")
+        console.print(f"  python:   {_platform.python_version()}")
+        console.print(f"  platform: {_platform.system()} {_platform.machine()}")
+        sys.exit(0)
     main()
+
+
+if __name__ == "__main__":
+    _cli_entry()

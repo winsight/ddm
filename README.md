@@ -177,8 +177,8 @@ defaults:
     PV_ITER:
       description: 逻辑综合数据
       file_patterns:
-        - /Users/{user}/xxx/{module}/*.v.gz
-        - /Users/{user}/xxx/{module}/*.v.pg
+        - /home/{user}/a0.outgoing/{module}/*.v.gz
+        - /home/{user}/a0.outgoing/{module}/*.v.pg
       gates:
         - name: gate1
         - name: gate2
@@ -187,8 +187,8 @@ defaults:
     PI_ITER:
       description: 物理验证数据
       file_patterns:
-        - /Users/{user}/xxx/{module}/*.v.pg
-        - /Users/{user}/xxx/{module}/*.hier.gds.gz
+        - /home/{user}/a0.outgoing/{module}/*.v.pg
+        - /home/{user}/a0.outgoing/{module}/*.hier.gds.gz
       gates:
         - name: gate1
         - name: gate2
@@ -223,7 +223,7 @@ PI:
 运行示例：
 
 ```sh
-python -m pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 python -m ddm submit -m CPU -t PV_ITER -s "initial PV"
 python -m ddm status -m CPU
 python -m ddm release -t PV_ITER -v V1
