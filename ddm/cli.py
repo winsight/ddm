@@ -368,10 +368,73 @@ def _list(ctx, tag, list_all, module, verbose):
                 latest.append(b)
         batches = latest
 
+    # Show status summary when looking at latest (not -A)
+    if not list_all:
+        _list_status_summary(cfg, storage, tag, batches)
+
     if verbose:
         _list_verbose(storage, batches, tag)
     else:
         _list_summary(storage, batches, tag, cfg)
+
+
+def _list_status_summary(cfg, storage, tag, batches):
+    """Print a high-level status summary for the tag."""
+    configured = set(cfg.modules_for(tag))
+    if not configured:
+        return
+
+    # Find the latest released version across all batches
+    all_full = storage.list_batches(tag=tag)
+    released_versions = sorted(
+        {b.get("version", "") for b in all_full if b["status"] == "RELEASED" and b.get("version")},
+        key=lambda v: max((b["created_at"] for b in all_full if b.get("version") == v), default=0),
+        reverse=True,
+    )
+    latest_version = released_versions[0] if released_versions else ""
+
+    # Classify each configured module
+    released_new: list = []       # module has a batch in the latest version
+    released_inherited: list = [] # released but not in the latest version
+    submitted: list = []          # SUBMITTED but not yet released
+    failed: list = []             # last batch FAILED
+    missing: list = []            # no record at all
+
+    for mod in sorted(configured):
+        mod_batches = [b for b in batches if b["module"] == mod]
+        if not mod_batches:
+            missing.append(mod)
+            continue
+        latest_b = mod_batches[0]
+        if latest_b["status"] == "SUBMITTED":
+            submitted.append(mod)
+        elif latest_b["status"] == "FAILED":
+            failed.append(mod)
+        elif latest_b["status"] == "RELEASED":
+            # New if this batch was released in the latest version
+            if latest_b.get("version") == latest_version:
+                released_new.append(mod)
+            else:
+                released_inherited.append(mod)
+
+    # Print summary block
+    lines: list = []
+    if released_new:
+        lines.append(f"  [green]已发布 ({latest_version})[/]: {', '.join(released_new)}")
+    if released_inherited:
+        lines.append(f"  [cyan]已发布 ({latest_version}, 继承)[/]: {', '.join(released_inherited)}")
+    if submitted:
+        lines.append(f"  [yellow]待发布[/]: {', '.join(submitted)}")
+    if failed:
+        lines.append(f"  [red]失败[/]: {', '.join(failed)}")
+    if missing:
+        lines.append(f"  [dim]未提交[/]: {', '.join(missing)}")
+
+    if lines:
+        console.print(f"\n[bold]{tag} Status[/]")
+        for line in lines:
+            console.print(line)
+        console.print("")
 
 
 def _list_summary(storage, batches, tag, cfg):
