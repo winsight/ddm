@@ -1,25 +1,27 @@
 #==================================================================
 # DDM tab completion for csh / tcsh
 #------------------------------------------------------------------
-# Add to your ~/.cshrc to enable:
+# Add to your ~/.cshrc or ~/.tcshrc:
 #
 #   source /path/to/ddm/ddm.complete.csh
 #
-# Once sourced, type `ddm <TAB>` to see subcommands,
-# `ddm submit -t <TAB>` to see available tags, etc.
+# Once sourced:
+#   ddm <TAB>               → subcommands (submit status release ...)
+#   ddm submit -t <TAB>     → tag names from config.yaml
+#   ddm release -t <TAB>    → same
 #==================================================================
-
-# --- static subcommand list (top-level) ---
-complete ddm 'p/1/(submit status release list check version)/'
-
-# --- dynamic completions via ddm hidden commands ---
-complete ddm 'n/-t/x:(`ddm __complete_tags 2>/dev/null`)/'   # tag names
-complete ddm 'n/-m/x:<module-name>/'                            # module names (free-form)
-complete ddm 'n/-s/x:<summary-text>/'                           # summary (free-form)
-complete ddm 'n/-c/f:*.yaml/' 'n/-c/f:*.yml/'                   # config file paths
-complete ddm 'n/-d/x:<time-filter like 5m 24h 3d>/'
-complete ddm 'n/-v/x:<version-label like V1 V2>/'
-
-# suppress extra hints for commands with no further args
-complete ddm 'n/check/( )/'
-complete ddm 'n/version/( )/'
+#
+# NOTE: tcsh complete rules MUST be in a single call — multiple
+#       `complete ddm` calls overwrite each other.
+#
+complete ddm \
+  'p/1/(submit status release list check version)/' \
+  'n/-t/x:(`ddm __complete_tags 2>/dev/null`)/' \
+  'n/-m/x:<module-name>/' \
+  'n/-s/x:<summary-text>/' \
+  'n/-c/f:*.yaml/' \
+  'n/-c/f:*.yml/' \
+  'n/-d/x:<time-filter like 5m 24h 3d>/' \
+  'n/-v/x:<version-label like V1 V2>/' \
+  'n/check/( )/' \
+  'n/version/( )/'
