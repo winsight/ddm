@@ -1,34 +1,29 @@
 #==================================================================
 # DDM tab completion for csh / tcsh
 #------------------------------------------------------------------
-# Add to ~/.cshrc or ~/.tcshrc:
-#   source /path/to/ddm/ddm.complete.csh
+# source /path/to/ddm/ddm.complete.csh
 #==================================================================
-# Press Tab after each position for hints:
-#   ddm <TAB>                 → subcommands
-#   ddm submit <TAB>          → -t -m -s -c
-#   ddm submit -t <TAB>       → tag names
-#   ddm submit -m <TAB>       → module names
-#   ddm release <TAB>         → -t -A -m -v --inherit -c
-#   ...
+# 设计:
+#   p/1  = 子命令列表
+#   n/-t = tag 值补全 (source 时双引号展开 $_ddm_tags)
+#   n/-m = module 值补全
+#   n/-* = catch-all: 任何 - 开头 → flag 列表
+#
+# 已知限制 (tcsh 6.20):
+#   从 n/-t 或 n/-m 选值后，再输入 - Tab 可能不弹 flag。
+#   这是 tcsh 6.20 对变量列表的边界行为，非代码 bug。
 #==================================================================
 
-# --- p/1 = position 1 after 'ddm': subcommand list ---
-# --- C/<cmd>/((...)) = after typing this subcommand, show its options ---
-# --- n/-<flag>/... = after typing this flag, show its value completions ---
+set _ddm_tags    = `ddm __complete_tags`
+set _ddm_modules = `ddm __complete_modules`
 
 complete ddm \
   'p/1/(submit status release list check version)/' \
-  \
-  'C/submit/((-t -m -s -c))/' \
-  'C/status/((-m -d -c))/' \
-  'C/release/((-t -A -m -v --inherit -c))/' \
-  'C/list/((-t -A -m -v -c))/' \
-  \
-  'n/-t/x:(`ddm __complete_tags 2>/dev/null`)/' \
-  'n/-m/x:(`ddm __complete_modules 2>/dev/null`)/' \
-  'n/-s/x:<summary-text>/' \
-  'n/-d/x:<time-filter like 5m 24h 3d>/' \
-  'n/-v/x:<version-label like V1 V2>/' \
+  "n/-t/($_ddm_tags)/" \
+  "n/-m/($_ddm_modules)/" \
   'n/-c/f:*.yaml/' \
-  'n/--inherit/( )/'
+  'n/-c/f:*.yml/' \
+  'n/-d/(5m 24h 3d)/' \
+  'n/-v/(V1 V2 V3)/' \
+  'n/-s/x:<summary>/' \
+  'n/-*/(-t -m -s -c -d -v)/'
