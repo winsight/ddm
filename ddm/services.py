@@ -144,9 +144,14 @@ def streaming_copy(
     source_path: str,
     dest_path: str,
 ) -> Tuple[int, str]:
-    """Stream-copy a file, computing BLAKE3 on the fly. Returns (size, hash_hex)."""
+    """Stream-copy a file, computing BLAKE3 on the fly. Returns (size, hash_hex).
+
+    Preserves the source file's mtime so timestamps survive across stages:
+      a0 → raw (copy, utime) → ready (os.replace) → release (copy2)
+    """
     dest = Path(dest_path)
     dest.parent.mkdir(parents=True, exist_ok=True)
+    src_stat = os.stat(source_path)
 
     if HAS_BLAKE3:
         hasher = blake3.blake3()
@@ -164,6 +169,9 @@ def streaming_copy(
             hasher.update(chunk)
             copied += len(chunk)
 
+    # Preserve original timestamp so later stages inherit it
+    os.utime(str(dest), (src_stat.st_atime, src_stat.st_mtime))
+
     return copied, hasher.hexdigest()
 
 
@@ -171,7 +179,7 @@ def streaming_copy(
 # Metadata comparison (pre_check / post_check)
 # ---------------------------------------------------------------------------
 
-def compare_metadata(source_path: str, dest_path: str, check_mtime: bool = False) -> bool:
+def compare_metadata(source_path: str, dest_path: str, check_mtime: bool = True) -> bool:
     """Compare file size and BLAKE3 hash. Optionally also check mtime."""
     if not os.path.exists(dest_path):
         logger.error(f"Destination missing: {dest_path}")
