@@ -333,12 +333,18 @@ def _fmt_delta(new: int, old: int) -> str:
 
 @main.command(name="list")
 @click.option("-t", "--tag", required=True, type=TAG_TYPE, help=f"Tag: {', '.join(sorted(VALID_TAGS))}")
-@click.option("-A", "--all", "list_all", is_flag=True, help="List all modules")
-@click.option("-m", "--module", default=None, help="Filter by module")
+@click.option("-A", "--all", "list_all", is_flag=True, help="Show all historical versions")
+@click.option("-m", "--module", default=None, help="Filter by module (shows all versions)")
 @click.option("-v", "--verbose", is_flag=True, help="Show per-file BLAKE3 hash and timestamp")
 @click.pass_context
 def _list(ctx, tag, list_all, module, verbose):
-    """List submitted / released data for a tag."""
+    """List data for a tag.
+
+    \b
+    Default:    latest version per module (one row per module)
+    -A:         all historical versions
+    -m MODULE:  all versions of a specific module
+    """
     config_path = ctx.obj["config_path"]
     cfg, storage = _init_config_and_storage(config_path)
 
@@ -346,11 +352,21 @@ def _list(ctx, tag, list_all, module, verbose):
         console.print(f"[red]Error:[/] Unknown tag '{tag}'. Supported: {', '.join(cfg.tag_names())}")
         sys.exit(1)
 
-    batches = storage.list_batches(tag=tag, module=module if not list_all else None)
+    batches = storage.list_batches(tag=tag, module=module)
 
     if not batches:
         console.print(f"[yellow]No records for tag=[bold]{tag}[/][/]")
         return
+
+    # Default: keep only latest version per module
+    if not list_all and not module:
+        seen = set()
+        latest = []
+        for b in batches:
+            if b["module"] not in seen:
+                seen.add(b["module"])
+                latest.append(b)
+        batches = latest
 
     if verbose:
         _list_verbose(storage, batches, tag)
