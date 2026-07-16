@@ -50,7 +50,7 @@ DDM（Data Delivery Manager）是一套 EDA 后端 PV/PI 数据交付流程管�
 - `_acquire_lock()` / `_release_lock()`: 原子文件锁
 - `streaming_copy()`: 流式拷贝 + BLAKE3 校验
 - `compare_metadata()`: 元数据比对（size / mtime / BLAKE3）
-- `find_source_files()`: 在平铺 a0.outgoing 中按模式匹配文件
+- `find_source_files()`: 在 a0.outgoing/{user}/{module} 中按模式匹配文件
 
 **storage.py** — 纯 SQL，无业务逻辑：
 - 三表 DDL：`batches` / `files` / `events`
@@ -123,10 +123,11 @@ lock_blocked  disk_full  failed
 ## 4. 文件流转状态机
 
 ```
-                    ┌─────────────┐
-                    │  a0.outgoing │  平铺源数据（无目录层级）
-                    │  (只读)      │  文件由 {user}_{module}.ext 命名
-                    └──────┬──────┘
+                    ┌──────────────────────────┐
+                    │  a0.outgoing/{user}/     │  按 {user}/{module} 分目录
+                    │  {module}/               │  文件由 {user}_{module}.ext 命名
+                    │  (只读)                  │
+                    └──────────┬───────────────┘
                            │ submit 命令
                            │ find_source_files() 按 file_patterns 匹配
                            ▼
@@ -143,17 +144,19 @@ lock_blocked  disk_full  failed
                     ┌─────────────┐
                     │   ready/     │  就绪暂存区（临界区）
                     │  <TAG>/      │  .lock_global_release 全局锁
-                    │  <MODULE>/   │  post_check 1: size + BLAKE3 vs a0
+                    │  <MODULE>/   │  post_check 1: size + BLAKE3 + mtime vs a0
                     └──────┬──────┘
                            │ release 命令
                            │ 完整性扫描（检测 rm -rf 缺失）
                            │ 授权检查（release_users）
-                           │ 版本重复检查
+                           │ 版本检查（不存在则创建，已存在则追加）
+                           │ 从 @latest 继承未变更模块（累积版本）
                            │ 三阶段 staging
-                           │  ┌─ Pass 1: copy2 → .staging/
-                           │  ├─ Pass 2: size diff vs 上一版本
+                           │  ┌─ Pass 1: copy2 → .staging/（保留 mtime）
+                           │  ├─ Pass 1b: 继承 @latest 中未更新模块
+                           │  ├─ Pass 2: size diff vs 上一版本（±30% 警告）
                            │  ├─ Pass 3: post_check 2 (size + mtime + BLAKE3)
-                           │  └─ commit: os.rename .staging/ → VERSION/
+                           │  └─ commit: os.rename（新版本）或 merge（追加）
                            ▼
                     ┌─────────────┐
                     │  release/    │  最终发布归档
@@ -218,9 +221,9 @@ a0.outgoing ──copy──▶ raw ──os.replace──▶ ready ──copy2�
      ▼                   ▼                    ▼                ▼
   streaming_copy    pre_check           post_check 1      post_check 2
   BLAKE3 实时计算    size ✓              size ✓            size ✓
-                    BLAKE3 ✓            BLAKE3 ✓          BLAKE3 ✓
-                    (a0 vs raw)         (a0 vs ready)     mtime ✓ (copy2 保留)
-                                                         (ready vs release)
+  utime 保留 mtime   BLAKE3 ✓            BLAKE3 ✓          BLAKE3 ✓
+                    mtime ✓             mtime ✓           mtime ✓
+                    (a0 vs raw)         (a0 vs ready)     (ready vs release)
 
 跨版本检查:
   每次 release 扫描所有 RELEASED batch，检测物理文件是否被 rm -rf
@@ -232,17 +235,20 @@ a0.outgoing ──copy──▶ raw ──os.replace──▶ ready ──copy2�
 ## 7. 配置驱动架构
 
 ```yaml
+outgoing_root: ./a0.outgoing/{user}/{module}   # 每用户每模块独立目录，{user}/{module} 自动展开
+
 defaults:
   tag:
     PV_ITER:
       description: 物理验证迭代版
-      file_patterns:              # 在平铺 a0.outgoing 中匹配文件
+      modules: [CPU, DDR]                       # 该 tag 管理的模块列表（-A 发布时检查）
+      file_patterns:                            # 在 a0.outgoing/{user}/{module} 中匹配文件
         - "{user}_{module}.v.gz"
         - "{user}_{module}.hier.gds"
-      gates:                      # 黑盒门禁，由 subprocess 调用
+      gates:                                    # 黑盒门禁，由 subprocess 调用
         - name: verilog_syntax_check
           command: python -m ddm.gates.verilog_check
-      release_users:              # 发布授权白名单
+      release_users:                            # 发布授权白名单
         - w00949819
 ```
 
@@ -264,7 +270,12 @@ ddm_new/                         # Git 仓库
 │       ├── runner.py            # 门禁调度器
 │       └── *_check.py           # 各门禁实现
 ├── tests/                       # pytest
-├── a0.outgoing/                 # 源数据（平铺，无目录层级）
+├── a0.outgoing/                 # 源数据（按 {user}/{module} 分目录）
+│   ├── wangshuai/
+│   │   ├── CPU/
+│   │   └── DDR/
+│   └── w00949819/
+│       └── CPU/
 ├── repository/                  # 运行时生成（不纳入 Git）
 │   ├── raw/<TAG>/<MODULE>/      # 临时暂存
 │   ├── ready/<TAG>/<MODULE>/    # 就绪暂存

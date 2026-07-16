@@ -226,7 +226,7 @@ cp /path/to/new/ddm /opt/ddm_package/ddm
 admins:
   - your_username
 
-outgoing_root: /nfs/eda/a0.outgoing   # 指向实际的 a0.outgoing 目录
+outgoing_root: ./a0.outgoing/{user}/{module}   # 指向实际的 a0.outgoing 目录（{user}{module}自动展开）
 repository_root: /nfs/eda/ddm_repo    # 仓库运行时目录（建议放在共享存储）
 log_dir: /nfs/eda/ddm_repo/logs       # 日志目录
 
@@ -234,6 +234,7 @@ defaults:
   tag:
     PV_ITER:
       description: 物理验证迭代版
+      modules: [CPU, DDR]                       # 该 tag 管理的模块列表
       file_patterns:
         - "{user}_{module}.v.gz"
         - "{user}_{module}.hier.gds"
@@ -251,9 +252,10 @@ defaults:
 | 配置项 | 说明 | 示例 |
 |--------|------|------|
 | `admins` | 全局管理员列表，可发布所有 tag | `[wangshuai, admin2]` |
-| `outgoing_root` | a0.outgoing 源数据根目录（平铺） | `/nfs/eda/a0.outgoing` |
+| `outgoing_root` | a0.outgoing 源数据根目录，支持 `{user}` `{module}` 占位符 | `./a0.outgoing/{user}/{module}` |
 | `repository_root` | 运行时仓库根目录 | `/nfs/eda/ddm_repo` |
 | `log_dir` | 日志输出目录 | `/nfs/eda/ddm_repo/logs` |
+| `defaults.tag.<NAME>.modules` | 该 tag 管理的模块列表（`-A` 发布时检查完整性） | `[CPU, DDR]` |
 | `defaults.tag.<NAME>.file_patterns` | 文件匹配模式，`{user}` `{module}` 占位符 | `["{user}_{module}.v.gz"]` |
 | `defaults.tag.<NAME>.gates` | 门禁脚本列表 | 见上文 |
 | `defaults.tag.<NAME>.release_users` | 有权限发布该 tag 的用户列表 | `[user1, user2]` |
@@ -261,8 +263,8 @@ defaults:
 ### 4.3 多用户共享存储配置
 
 ```yaml
-# 所有工程师的 a0.outgoing 在共享 NFS 上
-outgoing_root: /nfs/eda/a0.outgoing
+# 所有工程师的 a0.outgoing 在共享 NFS 上，{user}/{module} 自动展开为每个人独立目录
+outgoing_root: /nfs/eda/a0.outgoing/{user}/{module}
 
 # 仓库目录也在共享存储上，所有用户使用同一份
 repository_root: /nfs/eda/ddm_repo
@@ -324,10 +326,10 @@ python -m ddm check
 ### 5.2 功能测试
 
 ```bash
-# 创建测试数据
-mkdir -p a0.outgoing
-echo "test data" > a0.outgoing/${USER}_TEST.v.gz
-echo "test data" > a0.outgoing/${USER}_TEST.hier.gds
+# 创建测试数据（按 {user}/{module} 目录结构）
+mkdir -p a0.outgoing/${USER}/TEST
+echo "test data" > a0.outgoing/${USER}/TEST/${USER}_TEST.v.gz
+echo "test data" > a0.outgoing/${USER}/TEST/${USER}_TEST.hier.gds
 
 # 临时修改 config.yaml，添加测试 tag
 # （或使用现有 tag 和现有文件）
@@ -342,7 +344,7 @@ python -m ddm status -m TEST
 python -m ddm release -t PV_ITER -m TEST -v DEPLOY_TEST
 
 # 清理
-rm a0.outgoing/${USER}_TEST.*
+rm -rf a0.outgoing/${USER}/TEST
 bash clean.sh
 ```
 

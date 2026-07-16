@@ -53,7 +53,7 @@ DDM Environment Check
     Tags: PV_ITER, LVS_PASS, BASE_CLEAN, PV_FINAL, PI_ITER, PI_FINAL
   ✓ BLAKE3 available
   ✓ SQLite ready: repository/ddm.db
-  ✓ Outgoing root: /nfs/eda/a0.outgoing
+  ✓ Outgoing root: ./a0.outgoing/{user}/{module}
   ✓ psutil available
 ```
 
@@ -77,8 +77,8 @@ python -m ddm release -t PV_ITER -A -v V1
 ### 数据流转路径
 
 ```
-你的 a0.outgoing/ ──submit──▶ raw/ ──门禁──▶ ready/ ──release──▶ release/
-   (私有源数据)       (临时校验)   (自动检查)  (就绪暂存)    (共享归档)
+你的 a0.outgoing/{user}/{module}/ ──submit──▶ raw/ ──门禁──▶ ready/ ──release──▶ release/
+   (私有源数据)               (临时校验)   (自动检查)  (就绪暂存)    (共享归档)
 ```
 
 ### Tag（数据标签）
@@ -127,13 +127,14 @@ python -m ddm submit -m <MODULE> -t <TAG> [-s "备注"]
 1. 检查全局锁（release 进行中则拒绝）
 2. 获取模块锁（同 module+tag 并发提交则拒绝）
 3. 探测磁盘空间（不足 1.2 倍源文件总大小则拒绝）
-4. 在 `a0.outgoing/` 中按 `file_patterns` 匹配文件
-5. 流式拷贝到 `raw/<TAG>/<MODULE>/`，边拷贝边计算 BLAKE3
+4. 在 `a0.outgoing/{user}/{module}/` 中按 `file_patterns` 匹配文件
+5. 流式拷贝到 `raw/<TAG>/<MODULE>/`，边拷贝边计算 BLAKE3，拷贝后通过 `utime` 保留源文件 mtime
 6. pre_check：比对源文件与 raw 文件的 size + BLAKE3
 7. 运行门禁检查（subprocess 调用外部脚本）
 8. 原子移动 `raw/` → `ready/<TAG>/<MODULE>/`，设置权限 664
-9. post_check：再次比对源文件与 ready 文件
+9. post_check：再次比对源文件与 ready 文件的 size + BLAKE3
 10. 更新状态为 SUBMITTED，释放模块锁
+11. 写入操作日志到 `a0.outgoing/{user}/{module}/.ddm_submit.log`
 
 **示例：**
 
@@ -198,31 +199,34 @@ python -m ddm status -m <MODULE> [-d <TIME>]
 ### 3.3 release — 发布数据
 
 ```bash
-python -m ddm release -t <TAG> (-A | -m <MODULE>) [-v <LABEL>]
+python -m ddm release -t <TAG> (-A | -m <MODULE>) [-v <LABEL>] [--inherit]
 ```
 
 | 参数 | 缩写 | 必填 | 说明 |
 |------|------|------|------|
 | `--tag` | `-t` | 是 | 数据标签（单选），支持 Tab 补全 |
-| `--all` | `-A` | 二选一 | 发布该 tag 下所有 SUBMITTED 模块 |
-| `--module` | `-m` | 二选一 | 发布指定模块 |
-| `--version` | `-v` | 否 | 版本标签，默认纯日期戳 |
+| `--all` | `-A` | 二选一 | 发布 config.yaml `modules` 列表中所有已配置的模块。缺失模块时报错，结合 `--inherit` 可从上一版本继承 |
+| `--module` | `-m` | 二选一 | 发布指定模块（其他模块从 @latest 继承） |
+| `--version` | `-v` | 否 | 版本标签（如 `V1`），生成 `V1_YYYYMMDD`；不指定则纯日期戳 |
+| `--inherit` | | 否 | 配合 `-A` 使用，允许未提交的模块从上一版本继承 |
 | `--help` | `-h` | 否 | 显示帮助信息 |
 
 **执行流程：**
 
 1. **授权检查**：当前用户必须在 `release_users` 或 `admins` 中
-2. **版本重复检查**：目标版本目录已存在则拒绝
+2. **版本检查**：目标版本目录已存在则追加模块（不会拒绝），不存在则创建新版本
 3. **完整性扫描**：检查所有历史 RELEASED 版本物理文件是否被删除
 4. **模块锁检查**：有模块正在提交则拒绝
 5. **获取全局锁**：阻止新的 submit
 6. **三阶段提交**：
-   - Pass 1：复制 ready → `.staging_xxx/` 临时目录
-   - Pass 2：与上一版本对比文件大小，异常则告警
-   - Pass 3：post_check（size + mtime + BLAKE3）
-   - 全通过则 `os.rename` 原子提交
+   - Pass 1：复制 ready → `.staging_xxx/` 临时目录，使用 `copy2` 保留 mtime
+   - Pass 1b：从 @latest 继承未变更的模块（累积版本，保留历史数据）
+   - Pass 2：与上一版本对比文件大小，±30% 告警，±50% 异常警告
+   - Pass 3：post_check（size + mtime + BLAKE3 比对 ready vs staging）
+   - 全通过则 `os.rename`（新版本）或 `_merge_dirs`（追加）原子提交
 7. **更新 @latest**：软链接指向新版本
 8. **清理 ready/**：删除已发布的数据
+9. **写入操作日志**到 `release/<TAG>/.ddm_release.log`
 
 **示例：**
 
@@ -230,11 +234,14 @@ python -m ddm release -t <TAG> (-A | -m <MODULE>) [-v <LABEL>]
 # 发布所有 PV_ITER 模块，版本 V1
 python -m ddm release -t PV_ITER -A -v V1
 
-# 只发布 CPU 模块，版本 V2
+# 只发布 CPU 模块，版本 V2（其他模块从 V1 继承）
 python -m ddm release -t PV_ITER -m CPU -v V2
 
+# 发布所有模块，缺失的模块从上一版本继承
+python -m ddm release -t PV_ITER -A -v V3 --inherit
+
 # 不指定版本，使用当日日期
-python -m ddm release -t PI_ITER -A
+python -m ddm release -t PI_ITER -m CPU
 ```
 
 **输出示例（有完整性告警）：**
@@ -251,17 +258,20 @@ python -m ddm release -t PI_ITER -A
 ### 3.4 list — 列表查看
 
 ```bash
-python -m ddm list -t <TAG> [-A | -m <MODULE>]
+python -m ddm list -t <TAG> [-A | -m <MODULE>] [-v]
 ```
 
-| 参数 | 必填 | 说明 |
-|------|------|------|
 | 参数 | 缩写 | 必填 | 说明 |
 |------|------|------|------|
 | `--tag` | `-t` | 是 | 数据标签（单选），支持 Tab 补全 |
-| `--all` | `-A` | 二选一 | 列出所有模块 |
-| `--module` | `-m` | 二选一 | 列出指定模块 |
+| `--all` | `-A` | 否 | 显示所有历史版本（默认只显示每个模块的最新版本） |
+| `--module` | `-m` | 否 | 按模块过滤，显示该模块的所有版本 |
+| `--verbose` | `-v` | 否 | 逐文件显示 BLAKE3 哈希、时间戳和文件大小变化 |
 | `--help` | `-h` | 否 | 显示帮助信息 |
+
+**默认视图**（不带 `-A` 或 `-m`）：每个模块显示一行（最新版本），顶部显示该 tag 的状态摘要（已发布版本、待发布、失败、未提交的模块列表）。
+
+**-v 详细视图**：逐文件列出 BLAKE3 哈希（前 12 位）、文件大小变化（与上一版本相比）和源文件修改时间戳。适用于审计和数据完整性验证。
 
 ### 3.5 check — 环境检查
 
@@ -319,9 +329,10 @@ python -m ddm submit -m GPU -t PV_ITER -s "修复门禁问题 v2"
 # 第一轮：只发布 CPU
 python -m ddm release -t PV_ITER -m CPU -v V1
 
-# 第二轮：DDR 也准备好了，追加发布
+# 第二轮：DDR 也准备好了，追加发布（V2 会继承 V1 中的 CPU）
 python -m ddm release -t PV_ITER -m DDR -v V2
-# @latest 现在指向 V2，但 V1 的 CPU 数据仍在 release/PV_ITER/V1/ 中
+# @latest 现在指向 V2，包含 CPU（继承） + DDR（新增）
+# V1 的 CPU 数据仍在 release/PV_ITER/V1/ 中独立保留
 ```
 
 ---
@@ -330,19 +341,26 @@ python -m ddm release -t PV_ITER -m DDR -v V2
 
 ### a0.outgoing 目录结构
 
-`a0.outgoing/` 是一个**平铺**目录——所有文件直接放在根下，没有 tag 或 module 子目录：
+`a0.outgoing/` 按用户和模块分目录组织，每个工程师在自己的子目录中平铺文件。`outgoing_root` 路径中的 `{user}` 和 `{module}` 占位符在运行时自动替换（例如 `./a0.outgoing/{user}/{module}` 展开为 `./a0.outgoing/wangshuai/CPU/`）：
 
 ```
 a0.outgoing/
-├── wangshuai_CPU.v.gz
-├── wangshuai_CPU.hier.gds
-├── wangshuai_CPU.v.pg
-├── wangshuai_DDR.v.gz
-├── wangshuai_DDR.hier.gds
-├── w00949819_CPU.v.gz
-├── w00949819_CPU.hier.gds
+├── wangshuai/
+│   ├── CPU/
+│   │   ├── wangshuai_CPU.v.gz
+│   │   ├── wangshuai_CPU.hier.gds
+│   │   └── wangshuai_CPU.v.pg
+│   └── DDR/
+│       ├── wangshuai_DDR.v.gz
+│       └── wangshuai_DDR.hier.gds
+├── w00949819/
+│   └── CPU/
+│       ├── w00949819_CPU.v.gz
+│       └── w00949819_CPU.hier.gds
 └── ...
 ```
+
+每个模块目录下的文件是**平铺**的（无进一步子目录），由 `file_patterns` 模式匹配选择文件。
 
 ### file_patterns 匹配
 
