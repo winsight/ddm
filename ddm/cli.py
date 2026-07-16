@@ -261,9 +261,16 @@ def _status(ctx, module, date_filter):
 @click.option("-A", "--all", "release_all", is_flag=True, help="Release all modules")
 @click.option("-m", "--module", default=None, help="Release specific module")
 @click.option("-v", "--version", default="", help="Version label (default: date stamp)")
+@click.option("--amend", is_flag=True, help="Append to existing version instead of creating a new one")
 @click.pass_context
-def _release(ctx, tag, release_all, module, version):
-    """Release submitted data to release/ directory."""
+def _release(ctx, tag, release_all, module, version, amend):
+    """Release submitted data to release/ directory.
+
+    \b
+    Two modes:
+      New release:  release -m CPU -v V1    → creates V1_20260716/
+      Append to V1: release -m DDR -v V1 --amend → adds DDR into V1_20260716/
+    """
     config_path = ctx.obj["config_path"]
     cfg, storage = _init_config_and_storage(config_path)
     _setup_logger(cfg)
@@ -287,6 +294,7 @@ def _release(ctx, tag, release_all, module, version):
         module=module if not release_all else None,
         release_all=release_all,
         username=username,
+        amend=amend,
     )
 
     if result.success:

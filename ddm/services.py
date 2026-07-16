@@ -467,6 +467,21 @@ def _load_previous_sizes(release_dir: Path, tag: str, current_version: str) -> d
     return sizes
 
 
+def _merge_dirs(src: str, dst: str):
+    """Merge src directory into dst, overwriting same-named files."""
+    for item in os.listdir(src):
+        s = os.path.join(src, item)
+        d = os.path.join(dst, item)
+        if os.path.isdir(s):
+            if not os.path.isdir(d):
+                shutil.copytree(s, d)
+            else:
+                _merge_dirs(s, d)
+        else:
+            shutil.copy2(s, d)
+            os.chmod(d, 0o664)
+
+
 class ReleaseResult:
     def __init__(self, success: bool, message: str, version: str = "",
                  integrity_warnings: Optional[List[str]] = None):
@@ -485,6 +500,7 @@ def release(
     release_all: bool = False,
     progress=None,
     username: str = "",
+    amend: bool = False,
 ) -> ReleaseResult:
     """Execute the release pipeline.
 
@@ -512,10 +528,19 @@ def release(
     else:
         version = f"{version}_{time.strftime('%Y%m%d')}"
 
-    # ---- prevent duplicate version ----
     release_version_dir = config.release_dir() / tag / version
-    if release_version_dir.exists():
-        msg = f"Version '{version}' already exists for tag '{tag}'. Use a different -v label."
+
+    # ---- amend mode: add modules to existing version ----
+    if amend:
+        if not release_version_dir.is_dir():
+            msg = f"Cannot amend: version '{version}' does not exist. Run without --amend to create it."
+            logger.error(msg)
+            return ReleaseResult(False, msg)
+        logger.info(f"Amend mode: appending modules to existing version {version}")
+
+    # ---- new version: prevent duplicate ----
+    if not amend and release_version_dir.exists():
+        msg = f"Version '{version}' already exists for tag '{tag}'. Use --amend to add modules, or a different -v label for a new version."
         logger.error(msg)
         return ReleaseResult(False, msg)
 
@@ -679,7 +704,14 @@ def release(
             return ReleaseResult(False, "Release aborted: post-check failed, staging cleaned", version)
 
         # ---- all passed: commit ----
-        os.rename(str(staging_dir), str(release_version_dir))
+        if amend:
+            # Merge staging into existing version directory
+            _merge_dirs(str(staging_dir), str(release_version_dir))
+            shutil.rmtree(str(staging_dir), ignore_errors=True)
+            action = f"Amended {version}"
+        else:
+            os.rename(str(staging_dir), str(release_version_dir))
+            action = f"Released to {version}"
 
         for batch in batches:
             batch_uuid = batch["batch_uuid"]
@@ -690,13 +722,14 @@ def release(
                 final_path = sp.replace(str(staging_dir), str(release_version_dir))
                 storage.update_file_released(batch_uuid, f["source_path"], final_path)
             storage.update_batch_status(batch_uuid, STATUS_RELEASED, version=version)
-            storage.add_event(batch_uuid, EVENT_RELEASE_DONE, f"Released to {version}")
+            storage.add_event(batch_uuid, EVENT_RELEASE_DONE, action)
             storage.add_event(batch_uuid, EVENT_POST_CHECK_OK, "Final post-check passed")
 
-        latest_link = config.release_dir() / tag / "@latest"
-        if latest_link.is_symlink() or latest_link.exists():
-            latest_link.unlink()
-        latest_link.symlink_to(version, target_is_directory=True)
+        if not amend:
+            latest_link = config.release_dir() / tag / "@latest"
+            if latest_link.is_symlink() or latest_link.exists():
+                latest_link.unlink()
+            latest_link.symlink_to(version, target_is_directory=True)
 
         for batch in batches:
             batch_module = batch["module"]
