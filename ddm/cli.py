@@ -84,22 +84,7 @@ def _resolve_config_path(path: str) -> str:
     return path
 
 
-class TagParamType(click.ParamType):
-    """Click parameter type that provides completion for tag names."""
-    name = "tag"
-
-    def shell_complete(self, ctx, param, incomplete):
-        from ddm.config import Config
-        config_path = ctx.params.get("config", "config/config.yaml")
-        try:
-            cfg = Config(config_path)
-        except Exception:
-            cfg = None
-        tags = cfg.tag_names() if cfg else sorted(VALID_TAGS)
-        return [click.shell_completion.CompletionItem(t) for t in tags if t.startswith(incomplete)]
-
-
-TAG_TYPE = TagParamType()
+TAG_TYPE = click.STRING  # csh 补全走 complete 规则 + __complete_tags，不依赖 Click shell_complete
 
 
 @click.group()
