@@ -313,12 +313,31 @@ def _release(ctx, tag, release_all, module, version, inherit):
 # ---------------------------------------------------------------------------
 
 
+def _fmt_size(n: int) -> str:
+    """Human-readable file size."""
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024:
+            return f"{n}{unit}"
+        n //= 1024
+    return f"{n}TB"
+
+
+def _fmt_delta(new: int, old: int) -> str:
+    """Format size change as +X% or -X%."""
+    if old == 0:
+        return "-"
+    pct = (new - old) / old * 100
+    sign = "+" if pct >= 0 else ""
+    return f"{sign}{pct:.0f}%"
+
+
 @main.command(name="list")
 @click.option("-t", "--tag", required=True, type=TAG_TYPE, help=f"Tag: {', '.join(sorted(VALID_TAGS))}")
 @click.option("-A", "--all", "list_all", is_flag=True, help="List all modules")
 @click.option("-m", "--module", default=None, help="Filter by module")
+@click.option("-v", "--verbose", is_flag=True, help="Show per-file BLAKE3 hash and timestamp")
 @click.pass_context
-def _list(ctx, tag, list_all, module):
+def _list(ctx, tag, list_all, module, verbose):
     """List submitted / released data for a tag."""
     config_path = ctx.obj["config_path"]
     cfg, storage = _init_config_and_storage(config_path)
@@ -333,38 +352,97 @@ def _list(ctx, tag, list_all, module):
         console.print(f"[yellow]No records for tag=[bold]{tag}[/][/]")
         return
 
+    if verbose:
+        _list_verbose(storage, batches, tag)
+    else:
+        _list_summary(storage, batches, tag, cfg)
+
+
+def _list_summary(storage, batches, tag, cfg):
+    """Compact table with file size and delta vs previous version."""
+    # Build a map: batch_uuid -> total size of the most recent PREVIOUS version
+    prev_total: dict = {}
+    for b in batches:
+        if b["status"] != "RELEASED":
+            continue
+        prev_batches = storage.list_batches(tag=tag, module=b["module"], status="RELEASED")
+        # Find most recent version that is OLDER than this batch
+        for pb in prev_batches:
+            if pb["batch_uuid"] != b["batch_uuid"] and pb["created_at"] < b["created_at"]:
+                pfiles = storage.get_files(pb["batch_uuid"])
+                prev_total[b["batch_uuid"]] = sum(f.get("file_size", 0) for f in pfiles)
+                break
+
     table = Table(title=f"Records for tag: {tag}")
-    table.add_column("UUID", style="dim", max_width=10)
-    table.add_column("Module")
-    table.add_column("User")
+    table.add_column("Module", style="bold")
     table.add_column("Status")
     table.add_column("Version")
-    table.add_column("Summary")
+    table.add_column("Files", justify="right")
+    table.add_column("Size", justify="right")
+    table.add_column("Δ vs prev", justify="right")
     table.add_column("Time")
 
     status_colors = {
-        "PENDING": "yellow",
-        "SUBMITTED": "cyan",
-        "RELEASED": "green",
-        "FAILED": "red",
+        "PENDING": "yellow", "SUBMITTED": "cyan",
+        "RELEASED": "green", "FAILED": "red",
     }
 
     for b in batches:
-        uuid_short = b["batch_uuid"][:8]
+        files = storage.get_files(b["batch_uuid"])
+        file_count = len(files)
+        total_size = sum(f.get("file_size", 0) for f in files)
+
         st = b["status"]
         color = status_colors.get(st, "white")
         ts = time.strftime("%m-%d %H:%M", time.localtime(b["created_at"]))
+
+        delta_str = ""
+        old_total = prev_total.get(b["batch_uuid"])
+        if old_total is not None and old_total > 0:
+            delta_str = _fmt_delta(total_size, old_total)
+
         table.add_row(
-            uuid_short,
             b["module"],
-            b["username"],
             f"[{color}]{st}[/]",
             b.get("version", "") or "-",
-            b.get("summary", "") or "-",
+            str(file_count),
+            _fmt_size(total_size),
+            delta_str,
             ts,
         )
 
     console.print(table)
+
+
+def _list_verbose(storage, batches, tag):
+    """Per-file detail table with BLAKE3 and timestamp."""
+    for b in batches:
+        files = storage.get_files(b["batch_uuid"])
+        total_size = sum(f.get("file_size", 0) for f in files)
+        st = b["status"]
+        status_colors = {"PENDING": "yellow", "SUBMITTED": "cyan", "RELEASED": "green", "FAILED": "red"}
+        color = status_colors.get(st, "white")
+
+        console.print(f"\n[bold]{b['module']}[/]  [{color}]{st}[/]  "
+                      f"v={b.get('version') or '-'}  "
+                      f"files={len(files)}  size={_fmt_size(total_size)}")
+
+        ftable = Table(show_header=True, box=None)
+        ftable.add_column("File", style="dim")
+        ftable.add_column("Size", justify="right")
+        ftable.add_column("BLAKE3", style="dim", max_width=20)
+        ftable.add_column("Timestamp")
+
+        for f in files:
+            fname = Path(f["source_path"]).name if f.get("source_path") else "-"
+            fsize = _fmt_size(f.get("file_size", 0))
+            blake3_short = f.get("blake3_hash", "")[:12] if f.get("blake3_hash") else "-"
+            mtime_val = f.get("source_mtime", 0)
+            mtime_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime_val)) if mtime_val else "-"
+
+            ftable.add_row(fname, fsize, blake3_short, mtime_str)
+
+        console.print(ftable)
 
 
 # ---------------------------------------------------------------------------
