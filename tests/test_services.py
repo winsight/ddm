@@ -20,7 +20,7 @@ class TestConfig:
         cfg = Config("config/config.yaml")
         assert "PV_ITER" in cfg.tag_names()
         assert "PI_ITER" in cfg.tag_names()
-        assert cfg.outgoing_root == "./a0.outgoing"
+        assert "{user}" in cfg.outgoing_root
 
     def test_tag_config(self):
         from ddm.config import Config
@@ -121,9 +121,8 @@ class TestStorage:
 class TestFindSourceFiles:
     def test_find_flat_files(self):
         from ddm.services import find_source_files
-        # Use the actual test data we created
         files = find_source_files(
-            "a0.outgoing",
+            "a0.outgoing/{user}/{module}",
             ["{user}_{module}.v.gz", "{user}_{module}.hier.gds"],
             "wangshuai",
             "CPU",
@@ -134,7 +133,7 @@ class TestFindSourceFiles:
     def test_find_different_user(self):
         from ddm.services import find_source_files
         files = find_source_files(
-            "a0.outgoing",
+            "a0.outgoing/{user}/{module}",
             ["{user}_{module}.v.gz"],
             "w00949819",
             "CPU",
@@ -144,7 +143,7 @@ class TestFindSourceFiles:
     def test_no_match(self):
         from ddm.services import find_source_files
         files = find_source_files(
-            "a0.outgoing",
+            "a0.outgoing/{user}/{module}",
             ["{user}_{module}.v.gz"],
             "nonexistent",
             "CPU",

@@ -7,8 +7,9 @@ admins:
   - zhangsan
   - lisi
 
-# a0.outgoing 源数据根目录（平铺结构，无 tag 子目录）
-outgoing_root: ./a0.outgoing
+# a0.outgoing 源数据根目录，支持 {user} {module} 占位符
+# 每个工程师在自己的 a0.outgoing 下平铺文件（无 tag 子目录）
+outgoing_root: ./a0.outgoing/{user}/{module}
 
 # 运行时仓库根目录
 repository_root: ./repository

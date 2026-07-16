@@ -120,8 +120,13 @@ def find_source_files(
     user: str,
     module: str,
 ) -> List[str]:
-    """Find files in the flat outgoing_root matching expanded patterns."""
-    root = Path(outgoing_root).resolve()
+    """Find files in outgoing_root matching expanded patterns.
+
+    outgoing_root supports {user} and {module} placeholders, e.g.:
+      /data/{user}/{module}/a0.outgoing  →  /data/wangshuai/CPU/a0.outgoing
+    """
+    expanded_root = outgoing_root.format(user=user, module=module)
+    root = Path(expanded_root).resolve()
     if not root.is_dir():
         logger.warning(f"Outgoing root does not exist: {root}")
         return []
@@ -419,9 +424,9 @@ def submit(
             _step("Delivering", "Done", advance=True)
             logger.info(f"Submit complete: {batch_uuid} -> SUBMITTED")
 
-            # Write operation log to a0.outgoing/ for the owner
+            # Write operation log to the owner's a0.outgoing directory
             _write_op_log(
-                Path(config.outgoing_root) / ".ddm_submit.log",
+                Path(config.outgoing_root.format(user=username, module=module)) / ".ddm_submit.log",
                 f"submit  tag={tag}  module={module}  user={username}  "
                 f"files={len(source_files)}  size={total_size}  uuid={batch_uuid[:8]}  "
                 f"summary={summary or '-'}"
