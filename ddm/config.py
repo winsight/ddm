@@ -33,6 +33,7 @@ class TagConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
+    shared_group: str = "staff"
     file_groups: Dict[str, List[str]] = {}
     modules: Dict[str, ModuleOwnerConfig] = {}
     admins: List[str] = []
@@ -146,6 +147,11 @@ class Config:
 
     def release_dir(self) -> Path:
         return Path(self.repository_root) / "release"
+
+    @property
+    def shared_group(self) -> str:
+        """Return the shared group name for multi-user access (default: staff)."""
+        return self._model.shared_group if self._model else "staff"
 
     @property
     def file_groups(self) -> dict:

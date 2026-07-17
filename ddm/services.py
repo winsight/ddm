@@ -72,6 +72,27 @@ except ImportError:
 SIZE_CHANGE_WARN_RATIO = 0.30   # warn if size changes by ±30% or more
 SIZE_CHANGE_ALERT_RATIO = 0.50  # alert if size changes by ±50% or more
 
+# File-system permissions for shared (multi-user) directories.
+# SGID (0o2775) ensures new files/subdirs inherit the parent group so that
+# any member of the shared group (set via config.shared_group) can create,
+# overwrite, and release data.
+SHARED_DIR_PERMS = 0o2775
+SHARED_FILE_PERMS = 0o664
+
+
+def _ensure_dir(path: Path, repo_root: Path = Path(".")):
+    """Create directory with SGID group-writable permissions for shared access.
+
+    Chmod propagates up to all ancestors under repo_root so that parent
+    directories (e.g. raw/, ready/) also carry SGID.
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    current = path.resolve()
+    bound = repo_root.resolve()
+    while current != current.parent and str(current).startswith(str(bound)):
+        os.chmod(str(current), SHARED_DIR_PERMS)
+        current = current.parent
+
 
 # ---------------------------------------------------------------------------
 # Lock helpers
@@ -304,7 +325,7 @@ def submit(
     try:
         # ---- disk space ----
         raw_base = config.raw_dir()
-        raw_base.mkdir(parents=True, exist_ok=True)
+        _ensure_dir(raw_base, Path(config.repository_root).resolve())
         check_disk_space(str(raw_base))
 
         # ---- create batch ----
@@ -338,7 +359,7 @@ def submit(
 
         # ---- stream-copy to raw/<tag>/<module> ----
         raw_run_dir = raw_base / tag / module
-        raw_run_dir.mkdir(parents=True, exist_ok=True)
+        _ensure_dir(raw_run_dir, Path(config.repository_root).resolve())
 
         total_size = sum(os.path.getsize(f) for f in source_files)
 
@@ -408,14 +429,14 @@ def submit(
         # ---- atomic move to ready + chmod ----
         _step("Delivering", f"Moving to ready/{tag}/{module}", advance=False)
         ready_tag_dir = config.ready_dir() / tag / module
-        ready_tag_dir.mkdir(parents=True, exist_ok=True)
+        _ensure_dir(ready_tag_dir, Path(config.repository_root).resolve())
 
         for src in source_files:
             src_path = Path(src)
             raw_path = raw_run_dir / src_path.name
             ready_path = ready_tag_dir / src_path.name
             os.replace(str(raw_path), str(ready_path))
-            os.chmod(str(ready_path), 0o664)
+            os.chmod(str(ready_path), SHARED_FILE_PERMS)
             storage.update_file_ready(batch_uuid, src, str(ready_path))
 
         storage.add_event(batch_uuid, EVENT_DELIVERED, f"Files moved to {ready_tag_dir}")
@@ -521,7 +542,7 @@ def _merge_dirs(src: str, dst: str):
                 _merge_dirs(s, d)
         else:
             shutil.copy2(s, d)
-            os.chmod(d, 0o664)
+            os.chmod(d, SHARED_FILE_PERMS)
 
 
 class ReleaseResult:
@@ -660,8 +681,9 @@ def release(
     try:
         # ---- stage to temp directory (all-or-nothing) ----
         import uuid as _uuid
+        repo_root = Path(config.repository_root).resolve()
         staging_dir = config.release_dir() / tag / f".staging_{version}_{_uuid.uuid4().hex[:8]}"
-        staging_dir.mkdir(parents=True, exist_ok=True)
+        _ensure_dir(staging_dir, repo_root)
 
         # Map: (batch_uuid, ready_path) -> staging_path for cross-pass lookup
         staging_map: dict = {}
@@ -679,10 +701,10 @@ def release(
                 # Classify into group subdirectory (e.g. "verilog", "gds")
                 group = config.classify_file(fname, batch_module)
                 dest_dir = staging_dir / group if group else staging_dir
-                dest_dir.mkdir(parents=True, exist_ok=True)
+                _ensure_dir(dest_dir, repo_root)
                 sp = str(dest_dir / fname)
                 shutil.copy2(ready_path, sp)
-                os.chmod(sp, 0o664)
+                os.chmod(sp, SHARED_FILE_PERMS)
                 staging_map[(batch_uuid, ready_path)] = sp
                 total_files += 1
 
@@ -710,10 +732,10 @@ def release(
                         continue  # this module is being updated — skip
                     group = config.classify_file(f.name, mod_name) if mod_name else ""
                     dest_dir = staging_dir / group if group else staging_dir
-                    dest_dir.mkdir(parents=True, exist_ok=True)
+                    _ensure_dir(dest_dir, repo_root)
                     dest_path = str(dest_dir / f.name)
                     shutil.copy2(str(f), dest_path)
-                    os.chmod(dest_path, 0o664)
+                    os.chmod(dest_path, SHARED_FILE_PERMS)
                     inherited_count += 1
                 total_files += inherited_count
                 if inherited_count > 0:
@@ -774,6 +796,10 @@ def release(
         else:
             _merge_dirs(str(staging_dir), str(release_version_dir))
             shutil.rmtree(str(staging_dir), ignore_errors=True)
+        # Ensure version dir and all subdirs are group-writable so
+        # future owners can append modules to this version.
+        for root, dirs, _ in os.walk(str(release_version_dir)):
+            os.chmod(root, SHARED_DIR_PERMS)
         action = f"Released to {version}"
 
         for batch in batches:

@@ -29,6 +29,13 @@ file_groups:
   gds:     [".hier.gds", ".lvs.gds", ".gds.gz", ".final.hier.gds"]
   pg:      [".v.pg", ".pg"]
 
+# ══════════════════════════════════════════════════════
+# 共享组（多用户权限控制）
+# ══════════════════════════════════════════════════════
+# 所有 DDM 用户必须属于此组，运行时目录将使用 SGID 确保组内可读写。
+# 目标服务器通常有 staff 或 wheel 组，开发机可按实际设置。
+shared_group: wheel
+
 # a0.outgoing 源数据根目录，支持 {user} {module} 占位符
 # 每个工程师在自己的 a0.outgoing 下平铺文件（无 tag 子目录）
 outgoing_root: ./a0.outgoing/{user}/{module}

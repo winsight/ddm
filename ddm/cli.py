@@ -592,6 +592,22 @@ def check(ctx):
         else:
             console.print(f"  [yellow]![/] {label} (not created yet): {show_path}")
 
+    # Shared group membership (required for multi-user file access)
+    import grp
+    user = os.environ.get("USER", "")
+    shared_group = cfg.shared_group
+    try:
+        gids = os.getgroups()
+        gid = grp.getgrnam(shared_group).gr_gid
+        if gid in gids:
+            console.print(f"  [green]✓[/] Member of shared group: {shared_group}")
+        else:
+            console.print(f"  [red]✗[/] NOT in shared group '{shared_group}'. "
+                          f"Files created by other users may be inaccessible. "
+                          f"Contact admin to add {user} to {shared_group}.")
+    except KeyError:
+        console.print(f"  [yellow]![/] Shared group '{shared_group}' not found on system")
+
     # psutil
     try:
         import psutil
