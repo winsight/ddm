@@ -815,23 +815,25 @@ def check(ctx):
         now = time.time()
         for lf in raw_dir.glob(".lock_*"):
             age_min = (now - lf.stat().st_mtime) / 60
+            pid = "?"
+            lock_user = "?"
             try:
                 content = lf.read_text().split("\n")
-                pid_str = content[0].replace("pid=", "") if content else "?"
-                pid = int(pid_str)
-                # Check if process still exists (signal 0 = no-op test)
-                os.kill(pid, 0)
+                pid = content[0].replace("pid=", "") if content else "?"
+                for line in content:
+                    if line.startswith("user="):
+                        lock_user = line.replace("user=", "")
+                os.kill(int(pid), 0)  # signal 0 = existence check
                 pid_alive = True
             except (ValueError, OSError, ProcessLookupError):
                 pid_alive = False
             except Exception:
-                pid = "?"
                 pid_alive = False
 
             if not pid_alive:
-                stale.append(f"    .lock → {lf.name} (pid={pid}, 进程已退出, {age_min:.0f}min)")
+                stale.append(f"    .lock → {lf.name} (user={lock_user}, pid={pid}, 进程已退出, {age_min:.0f}min)")
             elif stale_minutes > 0 and age_min > stale_minutes:
-                alive.append(f"    .lock → {lf.name} (pid={pid}, 仍在运行但 {age_min:.0f}min 未释放)")
+                alive.append(f"    .lock → {lf.name} (user={lock_user}, pid={pid}, 仍在运行但 {age_min:.0f}min 未释放)")
 
         if stale:
             console.print(f"  [yellow]![/] Stale lock files (进程已退出，可安全清理):")

@@ -126,16 +126,22 @@ def _acquire_lock(lock_path: Path, description: str,
     try:
         fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         with os.fdopen(fd, "w") as f:
-            f.write(f"pid={os.getpid()}\ntime={time.time()}\n")
+            f.write(f"pid={os.getpid()}\n"
+                    f"user={os.environ.get('USER', '?')}\n"
+                    f"time={time.time()}\n")
         return ""  # fresh lock acquired, no warning
     except FileExistsError:
         if auto_clean_stale and lock_path.exists():
             age = time.time() - lock_path.stat().st_mtime
-            # Check if the original PID is still alive
+            # Parse lock file: pid + user for dual verification
             pid_dead = False
+            old_user = "?"
             try:
                 content = lock_path.read_text().split("\n")
                 old_pid = int(content[0].replace("pid=", "")) if content else 0
+                for line in content:
+                    if line.startswith("user="):
+                        old_user = line.replace("user=", "")
                 os.kill(old_pid, 0)  # signal 0 = existence check
             except (ValueError, OSError, ProcessLookupError):
                 pid_dead = True
@@ -143,7 +149,8 @@ def _acquire_lock(lock_path: Path, description: str,
                 pass  # can't determine, rely on age
 
             if pid_dead or (stale_seconds > 0 and age > stale_seconds):
-                reason = "进程已退出" if pid_dead else f"{age/60:.0f}min 前创建"
+                reason = f"进程已退出 (user={old_user})" if pid_dead else \
+                         f"{age/60:.0f}min 前创建 (user={old_user})"
                 logger.warning(
                     f"⚠ 检测到过期锁 ({reason}): {lock_path}")
                 logger.warning(
@@ -156,7 +163,9 @@ def _acquire_lock(lock_path: Path, description: str,
                 # Retry once after cleaning
                 fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
                 with os.fdopen(fd, "w") as f:
-                    f.write(f"pid={os.getpid()}\ntime={time.time()}\n")
+                    f.write(f"pid={os.getpid()}\n"
+                            f"user={os.environ.get('USER', '?')}\n"
+                            f"time={time.time()}\n")
                 return (f"⚠ 检测到过期锁 ({reason}) 并已自动清除。"
                         f"如果原 submit 仍在运行，请立即 Ctrl+C 取消。")
         raise LockError(
