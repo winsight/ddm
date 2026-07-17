@@ -337,18 +337,17 @@ class TestFileGroups:
         version_dir = cfg.release_dir() / "PV_ITER" / result.version
         assert version_dir.is_dir()
 
-        # Grouped files
-        verilog_dir = version_dir / "CPU" / "verilog"
-        gds_dir = version_dir / "CPU" / "gds"
-        pg_dir = version_dir / "CPU" / "pg"
-        root_dir = version_dir / "CPU"
+        # Grouped files — directly under version dir, no module subdirectory
+        verilog_file = version_dir / "verilog" / "CPU.v.gz"
+        gds_file = version_dir / "gds" / "CPU.hier.gds"
+        pg_file = version_dir / "pg" / "CPU.v.pg"
+        root_file = version_dir / "CPU.unknown.xyz"
 
-        assert (verilog_dir / "CPU.v.gz").is_file(), f"Expected {verilog_dir / 'CPU.v.gz'}"
-        assert (gds_dir / "CPU.hier.gds").is_file(), f"Expected {gds_dir / 'CPU.hier.gds'}"
-        assert (pg_dir / "CPU.v.pg").is_file(), f"Expected {pg_dir / 'CPU.v.pg'}"
-        # Unmatched file stays at module root
-        assert (root_dir / "CPU.unknown.xyz").is_file(), \
-            f"Expected {root_dir / 'CPU.unknown.xyz'} at module root"
+        assert verilog_file.is_file(), f"Expected {verilog_file}"
+        assert gds_file.is_file(), f"Expected {gds_file}"
+        assert pg_file.is_file(), f"Expected {pg_file}"
+        # Unmatched file stays at version root
+        assert root_file.is_file(), f"Expected {root_file} at version root"
 
         # Verify @latest symlink
         latest = cfg.release_dir() / "PV_ITER" / "@latest"

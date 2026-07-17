@@ -54,7 +54,7 @@ release/{TAG}/@latest → VERSION/     ← 最终发布归档
 flowchart LR
     A0["a0.outgoing/<br/>{user}/{module}/"] -->|"submit<br/>streaming_copy<br/>pre_check<br/>gates<br/>os.replace"| RAW
     RAW["raw/<br/>{TAG}/{MODULE}/"] --> READY
-    READY["ready/<br/>{TAG}/{MODULE}/"] -->|"release<br/>staging → commit<br/>post_check"| REL["release/{TAG}/<br/>@latest → VERSION/{MODULE}/"]
+    READY["ready/<br/>{TAG}/{MODULE}/"] -->|"release<br/>staging → commit<br/>post_check"| REL["release/{TAG}/<br/>@latest → VERSION/<br/>verilog/, gds/, pg/"]
 
     style A0 fill:#888,stroke:#333
     style REL fill:#4a9,stroke:#333,color:#fff
@@ -236,7 +236,7 @@ SQLite files 表:
   source_path  → a0.outgoing/wangshuai/CPU/CPU.v.gz
   raw_path     → raw/PV_ITER/CPU/CPU.v.gz       (submit 中途)
   ready_path   → ready/PV_ITER/CPU/CPU.v.gz      (submit 完成后)
-  release_path → release/PV_ITER/V1_20260717/CPU/CPU.v.gz  (release 后)
+  release_path → release/PV_ITER/V1_20260717/verilog/CPU.v.gz  (release 后)
 ```
 
 ---
@@ -317,14 +317,14 @@ flowchart LR
     subgraph BEFORE["release/PV_ITER/ (发布前)"]
         direction TB
         LATEST1["@latest → V1_20260710"]
-        V1["V1_20260710/<br/>├── CPU/<br/>└── DDR/"]
+        V1["V1_20260710/<br/>verilog/CPU.v.gz<br/>gds/CPU.hier.gds<br/>pg/CPU.v.pg<br/>verilog/DDR.v.gz<br/>gds/DDR.hier.gds<br/>pg/DDR.v.pg"]
     end
 
     subgraph AFTER["release/PV_ITER/ (发布后)"]
         direction TB
         LATEST2["@latest → V2_20260717"]
-        V1B["V1_20260710/<br/>├── CPU/<br/>└── DDR/"]
-        V2["V2_20260717/<br/>├── CPU/ ★ 新发布<br/>└── DDR/ ★ 从 V1 继承"]
+        V1B["V1_20260710/<br/>verilog/CPU.v.gz gds/CPU.hier.gds pg/CPU.v.pg<br/>verilog/DDR.v.gz gds/DDR.hier.gds pg/DDR.v.pg"]
+        V2["V2_20260717/<br/>verilog/CPU.v.gz ★<br/>gds/CPU.hier.gds ★<br/>pg/CPU.v.pg ★<br/>verilog/DDR.v.gz (继承)<br/>gds/DDR.hier.gds (继承)<br/>pg/DDR.v.pg (继承)"]
     end
 
     BEFORE -->|"ddm release -t PV_ITER -m CPU -v V2"| AFTER
@@ -357,11 +357,13 @@ flowchart TD
 release/PV_ITER/
 ├── @latest → V2_20260717
 ├── V1_20260710/
-│   ├── CPU/
-│   └── DDR/
+│   ├── verilog/CPU.v.gz, DDR.v.gz
+│   ├── gds/CPU.hier.gds, DDR.hier.gds
+│   └── pg/CPU.v.pg, DDR.v.pg
 └── V2_20260717/
-    ├── CPU/      ← ★ 新发布
-    └── DDR/      ← ★ 新发布（必须都已 SUBMITTED）
+    ├── verilog/CPU.v.gz, DDR.v.gz  ← ★ 新发布
+    ├── gds/CPU.hier.gds, DDR.hier.gds
+    └── pg/CPU.v.pg, DDR.v.pg
 ```
 
 #### 4.4.3 全量发布 + 继承：`-A --inherit`
@@ -373,14 +375,14 @@ flowchart LR
     subgraph BEFORE2["release/PV_ITER/ (发布前)"]
         direction TB
         L1["@latest → V1_20260710"]
-        OLD["V1_20260710/<br/>├── CPU/<br/>└── DDR/"]
+        OLD["V1_20260710/<br/>verilog/CPU.v.gz, DDR.v.gz<br/>gds/CPU.hier.gds, DDR.hier.gds<br/>pg/CPU.v.pg, DDR.v.pg"]
     end
 
     subgraph AFTER2["release/PV_ITER/ (发布后)"]
         direction TB
         L2["@latest → V2_20260717"]
-        OLD2["V1_20260710/<br/>├── CPU/<br/>└── DDR/"]
-        NEW["V2_20260717/<br/>├── CPU/ ★ 新发布<br/>└── DDR/ ★ 从 @latest 继承"]
+        OLD2["V1_20260710/<br/>verilog/CPU.v.gz, DDR.v.gz<br/>gds/CPU.hier.gds, DDR.hier.gds"]
+        NEW["V2_20260717/<br/>verilog/CPU.v.gz ★新发布<br/>gds/CPU.hier.gds ★新发布<br/>verilog/DDR.v.gz (继承)<br/>gds/DDR.hier.gds (继承)"]
     end
 
     BEFORE2 -->|"ddm release -t PV_ITER -A -v V2 --inherit<br/>(仅 CPU 有 SUBMITTED)"| AFTER2
@@ -424,10 +426,10 @@ flowchart TD
     style SKIP fill:#888,stroke:#333
 ```
 
-**关键规则：模块粒度继承**
-- 如果 `-m CPU`，则 DDR、GPU 等其他模块完整从 `@latest` 复制到新版本
-- 继承是**整个模块目录**级别的 `copytree`，不是单文件
-- 继承的文件也会设置 `chmod 0o664`
+**关键规则：按文件类型分组**
+- 文件通过 `file_groups` 配置映射到 verilog/gds/pg 等子目录，各模块文件在 group 内混合存放
+- 文件名自带模块前缀（`CPU.v.gz`），无需模块层级目录区分
+- 未匹配 file_groups 的文件直接放在版本根目录
 
 ---
 
@@ -667,23 +669,23 @@ flowchart TD
 
     subgraph STEP1["第 1 次：单模块 CPU"]
         E1["ddm submit -m CPU -t PV_ITER ✓<br/>ddm submit -m DDR -t PV_ITER ✓<br/>ddm release -t PV_ITER -m CPU -v V1"]
-        R1["V1_20260717/<br/>└── CPU/ ★ 新发布<br/>（无 DDR，@latest 尚不存在）"]
+        R1["V1_20260717/<br/>verilog/CPU.v.gz, gds/CPU.hier.gds, pg/CPU.v.pg<br/>（无 DDR，@latest 尚不存在）"]
     end
 
     subgraph STEP2["第 2 次：单模块 DDR"]
         E2["ddm release -t PV_ITER -m DDR -v V2"]
-        R2["V2_20260717/<br/>├── CPU/ ★ 继承自 V1<br/>└── DDR/ ★ 新发布"]
+        R2["V2_20260717/<br/>verilog/CPU.v.gz (继承) gds/CPU.hier.gds (继承)<br/>verilog/DDR.v.gz ★ gds/DDR.hier.gds ★"]
     end
 
     subgraph STEP3["第 3 次：全量发布"]
         E3["ddm submit -m CPU -t PV_ITER ✓<br/>ddm submit -m DDR -t PV_ITER ✓<br/>ddm release -t PV_ITER -A -v V3"]
-        R3["V3_20260717/<br/>├── CPU/ ★ 新发布<br/>└── DDR/ ★ 新发布"]
+        R3["V3_20260717/<br/>verilog/CPU.v.gz ★, DDR.v.gz ★<br/>gds/CPU.hier.gds ★, DDR.hier.gds ★"]
     end
 
     STEP0 --> STEP1 --> STEP2 --> STEP3
 
     subgraph FINAL["最终目录结构"]
-        TREE["release/PV_ITER/<br/>├── @latest → V3_20260717<br/>├── V1_20260717/CPU/<br/>├── V2_20260717/CPU/, DDR/<br/>└── V3_20260717/CPU/, DDR/"]
+        TREE["release/PV_ITER/<br/>├── @latest → V3_20260717<br/>├── V1_20260717/verilog,gds,pg/<br/>├── V2_20260717/verilog,gds,pg/<br/>└── V3_20260717/verilog,gds,pg/"]
     end
 
     STEP3 --> FINAL

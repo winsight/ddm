@@ -678,7 +678,7 @@ def release(
                 fname = Path(ready_path).name
                 # Classify into group subdirectory (e.g. "verilog", "gds")
                 group = config.classify_file(fname, batch_module)
-                dest_dir = staging_dir / batch_module / group if group else staging_dir / batch_module
+                dest_dir = staging_dir / group if group else staging_dir
                 dest_dir.mkdir(parents=True, exist_ok=True)
                 sp = str(dest_dir / fname)
                 shutil.copy2(ready_path, sp)
@@ -690,30 +690,35 @@ def release(
         latest_link = config.release_dir() / tag / "@latest"
         modules_in_this_release = {b["module"] for b in batches}
         inherited_count = 0
+        # Helper: identify module from filename prefix (e.g. "CPU.v.gz" → "CPU")
+        configured_modules = set(config.modules_for(tag))
+
+        def _module_of(filename: str) -> str:
+            for m in configured_modules:
+                if filename.startswith(m + "."):
+                    return m
+            return ""
 
         if latest_link.is_symlink():
             prev_dir = latest_link.resolve()
             if prev_dir.is_dir() and prev_dir.name != version:
-                for mod_dir in prev_dir.iterdir():
-                    if not mod_dir.is_dir():
+                for f in prev_dir.rglob("*"):
+                    if not f.is_file():
                         continue
-                    mod_name = mod_dir.name
-                    if mod_name in modules_in_this_release:
+                    mod_name = _module_of(f.name)
+                    if mod_name and mod_name in modules_in_this_release:
                         continue  # this module is being updated — skip
-                    # Walk old version files and copy with file_groups classification
-                    for f in mod_dir.rglob("*"):
-                        if f.is_file():
-                            group = config.classify_file(f.name, mod_name)
-                            dest_dir = staging_dir / mod_name / group if group else staging_dir / mod_name
-                            dest_dir.mkdir(parents=True, exist_ok=True)
-                            dest_path = str(dest_dir / f.name)
-                            shutil.copy2(str(f), dest_path)
-                            os.chmod(dest_path, 0o664)
-                            inherited_count += 1
+                    group = config.classify_file(f.name, mod_name) if mod_name else ""
+                    dest_dir = staging_dir / group if group else staging_dir
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+                    dest_path = str(dest_dir / f.name)
+                    shutil.copy2(str(f), dest_path)
+                    os.chmod(dest_path, 0o664)
+                    inherited_count += 1
                 total_files += inherited_count
                 if inherited_count > 0:
-                    logger.info(f"Inherited {inherited_count} files from {prev_dir.name} "
-                                f"(unchanged modules: {set(d.name for d in prev_dir.iterdir() if d.is_dir()) - modules_in_this_release})")
+                    logger.info(f"Inherited {inherited_count} files from {prev_dir.name}")
+                    logger.info(f"(modules in this release: {sorted(modules_in_this_release)})")
 
         # Pass 2: size diff (read-only, against previous version)
         prev_sizes = _load_previous_sizes(config.release_dir(), tag, version)
