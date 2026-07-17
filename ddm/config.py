@@ -33,6 +33,7 @@ class TagConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
+    file_groups: Dict[str, List[str]] = {}
     modules: Dict[str, ModuleOwnerConfig] = {}
     admins: List[str] = []
     outgoing_root: str = "./a0.outgoing"
@@ -145,6 +146,33 @@ class Config:
 
     def release_dir(self) -> Path:
         return Path(self.repository_root) / "release"
+
+    @property
+    def file_groups(self) -> dict:
+        """Return the global file_groups mapping (group_name → suffix patterns)."""
+        return self._model.file_groups if self._model else {}
+
+    def classify_file(self, filename: str, module: str) -> str:
+        """Classify a file into its group based on suffix matching.
+
+        filename  like "CPU.v.gz" or "CPU.final.hier.gds"
+        module    like "CPU"
+
+        Returns the group name (e.g. "verilog", "gds"), or "" if unmatched.
+
+        Matching rule:
+          1. Strip the module name prefix → ".v.gz" or ".final.hier.gds"
+          2. For each group (in declaration order), check if the stripped suffix
+             ends with any pattern in that group.
+          3. First match wins.
+          4. Return "" if no group matches.
+        """
+        stripped = filename[len(module):]  # "CPU.v.gz" → ".v.gz"
+        for group_name, patterns in self.file_groups.items():
+            for pat in patterns:
+                if stripped.endswith(pat):
+                    return group_name
+        return ""
 
     def db_path(self) -> str:
         return str(Path(self.repository_root) / "ddm.db")

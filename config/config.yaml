@@ -18,6 +18,17 @@ admins:
   - zhangsan
   - lisi
 
+# ══════════════════════════════════════════════════════
+# 全局文件类型映射（所有 tag 共用）
+# ══════════════════════════════════════════════════════
+# release 时按此映射将文件分类到 Version/{module}/{group}/ 子目录。
+# 匹配规则：去掉模块名前缀后，取最长后缀匹配，按声明顺序命中即停止。
+# 未匹配到的文件放在模块根目录（向后兼容）。
+file_groups:
+  verilog: [".v.gz", ".v"]
+  gds:     [".hier.gds", ".lvs.gds", ".gds.gz", ".final.hier.gds"]
+  pg:      [".v.pg", ".pg"]
+
 # a0.outgoing 源数据根目录，支持 {user} {module} 占位符
 # 每个工程师在自己的 a0.outgoing 下平铺文件（无 tag 子目录）
 outgoing_root: ./a0.outgoing/{user}/{module}

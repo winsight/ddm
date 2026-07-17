@@ -672,12 +672,15 @@ def release(
             batch_uuid = batch["batch_uuid"]
             batch_module = batch["module"]
             files = storage.get_files(batch_uuid)
-            staging_mod_dir = staging_dir / batch_module
-            staging_mod_dir.mkdir(parents=True, exist_ok=True)
 
             for f in files:
                 ready_path = f["ready_path"]
-                sp = str(staging_mod_dir / Path(ready_path).name)
+                fname = Path(ready_path).name
+                # Classify into group subdirectory (e.g. "verilog", "gds")
+                group = config.classify_file(fname, batch_module)
+                dest_dir = staging_dir / batch_module / group if group else staging_dir / batch_module
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                sp = str(dest_dir / fname)
                 shutil.copy2(ready_path, sp)
                 os.chmod(sp, 0o664)
                 staging_map[(batch_uuid, ready_path)] = sp
@@ -697,12 +700,15 @@ def release(
                     mod_name = mod_dir.name
                     if mod_name in modules_in_this_release:
                         continue  # this module is being updated — skip
-                    # Carry forward entire module directory
-                    dest_mod_dir = staging_dir / mod_name
-                    shutil.copytree(str(mod_dir), str(dest_mod_dir), symlinks=True)
-                    for f in dest_mod_dir.rglob("*"):
+                    # Walk old version files and copy with file_groups classification
+                    for f in mod_dir.rglob("*"):
                         if f.is_file():
-                            os.chmod(str(f), 0o664)
+                            group = config.classify_file(f.name, mod_name)
+                            dest_dir = staging_dir / mod_name / group if group else staging_dir / mod_name
+                            dest_dir.mkdir(parents=True, exist_ok=True)
+                            dest_path = str(dest_dir / f.name)
+                            shutil.copy2(str(f), dest_path)
+                            os.chmod(dest_path, 0o664)
                             inherited_count += 1
                 total_files += inherited_count
                 if inherited_count > 0:

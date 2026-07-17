@@ -187,3 +187,174 @@ class TestFindSourceFiles:
             "CPU",
         )
         assert len(files) == 0
+
+
+class TestFileGroups:
+    """Tests for file_groups classification and release directory structure."""
+
+    def test_file_groups_loaded(self):
+        from ddm.config import Config
+        cfg = Config("config/config.yaml")
+        groups = cfg.file_groups
+        assert "verilog" in groups
+        assert "gds" in groups
+        assert "pg" in groups
+        assert ".v.gz" in groups["verilog"]
+        assert ".hier.gds" in groups["gds"]
+        assert ".v.pg" in groups["pg"]
+
+    def test_classify_verilog(self):
+        from ddm.config import Config
+        cfg = Config("config/config.yaml")
+        assert cfg.classify_file("CPU.v.gz", "CPU") == "verilog"
+        assert cfg.classify_file("CPU.base.v.gz", "CPU") == "verilog"
+        assert cfg.classify_file("CPU.final.v.gz", "CPU") == "verilog"
+        assert cfg.classify_file("DDR.v.gz", "DDR") == "verilog"
+
+    def test_classify_gds(self):
+        from ddm.config import Config
+        cfg = Config("config/config.yaml")
+        assert cfg.classify_file("CPU.hier.gds", "CPU") == "gds"
+        assert cfg.classify_file("CPU.final.hier.gds", "CPU") == "gds"
+        assert cfg.classify_file("CPU.lvs.gds", "CPU") == "gds"
+        # .gds.gz → stripped suffix ".pi.final.gds.gz" ends with ".gds.gz"
+        assert cfg.classify_file("CPU.pi.final.gds.gz", "CPU") == "gds"
+
+    def test_classify_pg(self):
+        from ddm.config import Config
+        cfg = Config("config/config.yaml")
+        assert cfg.classify_file("CPU.v.pg", "CPU") == "pg"
+        assert cfg.classify_file("CPU.pi.v.pg", "CPU") == "pg"
+        assert cfg.classify_file("CPU.pi.final.v.pg", "CPU") == "pg"
+
+    def test_classify_unmatched(self):
+        from ddm.config import Config
+        cfg = Config("config/config.yaml")
+        assert cfg.classify_file("CPU.unknown.xyz", "CPU") == ""
+        assert cfg.classify_file("CPU.raw", "CPU") == ""
+        assert cfg.classify_file("CPU.tar.gz", "CPU") == ""
+
+    def test_classify_first_match_wins(self):
+        """If a suffix could match multiple groups, first declared wins."""
+        from ddm.config import Config
+        cfg = Config("config/config.yaml")
+        # .v.gz is declared in verilog (first), so it should be verilog
+        assert cfg.classify_file("CPU.v.gz", "CPU") == "verilog"
+
+    def test_empty_file_groups(self):
+        """Without file_groups config, classify_file always returns ''."""
+        from ddm.config import Config, AppConfig
+        # Build a Config with empty file_groups
+        cfg = Config.__new__(Config)
+        cfg.config_path = ""
+        cfg._raw = {}
+        cfg._model = AppConfig(
+            file_groups={},
+            outgoing_root="./a0.outgoing",
+            repository_root="./repository",
+            log_dir="./logs",
+            defaults={"tag": {}},
+        )
+        assert cfg.classify_file("CPU.v.gz", "CPU") == ""
+        assert cfg.classify_file("CPU.hier.gds", "CPU") == ""
+        assert cfg.file_groups == {}
+
+    def test_release_with_file_groups(self, tmp_path):
+        """End-to-end: submit → release → verify grouped directory structure."""
+        from ddm.config import Config, AppConfig, TagConfig, GateDef
+        from ddm.services import release
+        from ddm.storage import STATUS_SUBMITTED, STATUS_RELEASED, Storage
+
+        cfg = Config.__new__(Config)
+        cfg.config_path = ""
+        cfg._raw = {}
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        out_dir = tmp_path / "a0.outgoing" / "testuser" / "CPU"
+        out_dir.mkdir(parents=True)
+
+        # Create test files
+        (out_dir / "CPU.v.gz").write_text("verilog content")
+        (out_dir / "CPU.hier.gds").write_text("gds content")
+        (out_dir / "CPU.v.pg").write_text("pg content")
+        (out_dir / "CPU.unknown.xyz").write_text("unmatched content")
+
+        cfg._model = AppConfig(
+            file_groups={
+                "verilog": [".v.gz"],
+                "gds": [".hier.gds"],
+                "pg": [".v.pg"],
+            },
+            modules={},
+            admins=["testuser"],
+            outgoing_root=str(tmp_path / "a0.outgoing" / "{user}" / "{module}"),
+            repository_root=str(repo),
+            log_dir=str(tmp_path / "logs"),
+            defaults={
+                "tag": {
+                    "PV_ITER": TagConfig(
+                        description="test",
+                        modules=["CPU"],
+                        file_patterns=[
+                            "{module}.v.gz",
+                            "{module}.hier.gds",
+                            "{module}.v.pg",
+                            "{module}.unknown.xyz",
+                        ],
+                        gates=[],
+                        release_users=["testuser"],
+                    )
+                }
+            },
+        )
+
+        # Setup ready/ directory as if submit completed
+        ready_dir = cfg.ready_dir() / "PV_ITER" / "CPU"
+        ready_dir.mkdir(parents=True)
+        for f in out_dir.iterdir():
+            shutil.copy2(str(f), str(ready_dir / f.name))
+
+        # Create SUBMITTED batch in storage
+        db_path = str(repo / "ddm.db")
+        storage = Storage(db_path)
+        batch_uuid = storage.create_batch("CPU", "PV_ITER", "testuser")
+        for f in sorted(out_dir.iterdir()):
+            storage.add_file(batch_uuid, str(f), f.stat().st_size, "fakehash")
+            storage.update_file_raw(batch_uuid, str(f),
+                                    str(ready_dir / f.name), f.stat().st_size, "fakehash")
+            storage.update_file_ready(batch_uuid, str(f), str(ready_dir / f.name))
+        storage.update_batch_status(batch_uuid, STATUS_SUBMITTED)
+
+        # Release
+        result = release(cfg, storage, tag="PV_ITER", version="V1",
+                         module="CPU", release_all=False,
+                         username="testuser")
+
+        assert result.success, f"Release failed: {result.message}"
+
+        # Verify directory structure
+        version_dir = cfg.release_dir() / "PV_ITER" / result.version
+        assert version_dir.is_dir()
+
+        # Grouped files
+        verilog_dir = version_dir / "CPU" / "verilog"
+        gds_dir = version_dir / "CPU" / "gds"
+        pg_dir = version_dir / "CPU" / "pg"
+        root_dir = version_dir / "CPU"
+
+        assert (verilog_dir / "CPU.v.gz").is_file(), f"Expected {verilog_dir / 'CPU.v.gz'}"
+        assert (gds_dir / "CPU.hier.gds").is_file(), f"Expected {gds_dir / 'CPU.hier.gds'}"
+        assert (pg_dir / "CPU.v.pg").is_file(), f"Expected {pg_dir / 'CPU.v.pg'}"
+        # Unmatched file stays at module root
+        assert (root_dir / "CPU.unknown.xyz").is_file(), \
+            f"Expected {root_dir / 'CPU.unknown.xyz'} at module root"
+
+        # Verify @latest symlink
+        latest = cfg.release_dir() / "PV_ITER" / "@latest"
+        assert latest.is_symlink()
+        assert latest.resolve().name == result.version
+
+        # Verify batch status → RELEASED
+        batch = storage.get_batch(batch_uuid)
+        assert batch["status"] == STATUS_RELEASED

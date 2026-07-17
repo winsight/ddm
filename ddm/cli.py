@@ -74,16 +74,6 @@ def _parse_time_filter(time_str: str) -> float:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_config_path(path: str) -> str:
-    """If running as a PyInstaller binary, resolve relative paths against the
-    bundled data directory. Otherwise use the path as-is."""
-    if getattr(sys, "frozen", False):
-        bundled = os.path.join(sys._MEIPASS, path)
-        if os.path.exists(bundled):
-            return bundled
-    return path
-
-
 TAG_TYPE = click.STRING  # csh 补全走 complete 规则 + __complete_tags，不依赖 Click shell_complete
 
 
@@ -101,7 +91,7 @@ def main(ctx, config):
     Manage PV/PI data delivery pipeline with gates, locks, and audit trails.
     """
     ctx.ensure_object(dict)
-    ctx.obj["config_path"] = _resolve_config_path(config)
+    ctx.obj["config_path"] = config
 
 
 # ---------------------------------------------------------------------------
