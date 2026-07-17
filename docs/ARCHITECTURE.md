@@ -160,9 +160,9 @@ lock_blocked  disk_full  failed
                            ▼
                     ┌─────────────┐
                     │  release/    │  最终发布归档
-                    │  <TAG>/      │  VERSION/ (实体发布)
+                    │  <TAG>/      │  VERSION/{verilog,gds,pg,...}/
                     │    @latest → │  软链接指向最新版本
-                    │    VERSION/  │
+                    │    VERSION/  │  文件名自带 {module}. 前缀区分模块
                     └─────────────┘
 ```
 
@@ -235,6 +235,11 @@ a0.outgoing ──copy──▶ raw ──os.replace──▶ ready ──copy2�
 ## 7. 配置驱动架构
 
 ```yaml
+file_groups:                                   # 全局文件类型映射（所有 tag 共用）
+  verilog: [".v.gz", ".v"]                    #   release 时按后缀分类到子目录
+  gds:     [".hier.gds", ".gds.gz", ...]
+  pg:      [".v.pg", ".pg"]
+
 outgoing_root: ./a0.outgoing/{user}/{module}   # 每用户每模块独立目录，{user}/{module} 自动展开
 
 defaults:
@@ -252,7 +257,7 @@ defaults:
         - w00949819
 ```
 
-新增 tag 或修改流程只需编辑 YAML，主程序零改动。
+新增 tag、文件类型或修改流程只需编辑 YAML，主程序零改动。
 
 ---
 
@@ -276,14 +281,19 @@ ddm_new/                         # Git 仓库
 │   │   └── DDR/
 │   └── w00949819/
 │       └── CPU/
-├── repository/                  # 运行时生成（不纳入 Git）
-│   ├── raw/<TAG>/<MODULE>/      # 临时暂存
-│   ├── ready/<TAG>/<MODULE>/    # 就绪暂存
-│   ├── release/<TAG>/           # 发布归档
+├── docs/                         # 项目文档
+│   ├── WORKFLOWS.md              # Submit & Release 完整流程
+│   ├── USER_GUIDE.md             # 用户指南
+│   ├── DEPLOY.md                 # 部署指南
+│   └── ARCHITECTURE.md           # 架构设计（本文件）
+├── repository/                   # 运行时生成（不纳入 Git）
+│   ├── raw/<TAG>/<MODULE>/       # 临时暂存
+│   ├── ready/<TAG>/<MODULE>/     # 就绪暂存
+│   ├── release/<TAG>/            # 发布归档
 │   │   ├── @latest → VERSION
-│   │   └── VERSION/<MODULE>/
-│   └── ddm.db                   # SQLite 数据库
-└── logs/                        # 运行日志（不纳入 Git）
+│   │   └── VERSION/{verilog,gds,pg,...}/
+│   └── ddm.db                    # SQLite 数据库
+└── logs/                         # 运行日志（不纳入 Git）
 ```
 
 ## 9. 技术栈

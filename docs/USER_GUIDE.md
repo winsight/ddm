@@ -247,8 +247,8 @@ python3 -m ddm release -t PI_ITER -m CPU
 
 ⚠ Integrity Warnings:
   Integrity warning: 1 previously-released version(s) have missing files: ['V1_20260716']
-    repository/release/PV_ITER/V1_20260716/CPU/wangshuai_CPU.v.gz
-  Size anomaly [increase 60%]: wangshuai_CPU.v.pg: 109 → 174 bytes
+    repository/release/PV_ITER/V1_20260716/verilog/CPU.v.gz
+  Size anomaly [increase 60%]: CPU.v.pg: 109 → 174 bytes
 ```
 
 ### 3.4 list — 列表查看

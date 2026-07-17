@@ -230,7 +230,7 @@ python -m ddm release -t PV_ITER -v V1
 python -m ddm list -A -t PV_ITER
 ```
 
-源文件位于平铺的 `a0.outgoing/` 文件池，Tag 不作为源目录层级；每个 Tag 的 `file_patterns` 配置决定它选择哪些 `{module}` 文件。提交后严格使用 `raw/<TAG>/<MODULE>`、`ready/<TAG>/<MODULE>` 与 `release/<TAG>/<VERSION>/<MODULE>`；模块排它锁与全局发布锁防止并发碰撞；成功后以 `os.replace` 原子移入 ready，并执行 `chmod 664`。发布前会验证 SQLite 与物理目录一致，发布完成后清理 ready 暂存区，并将 `@latest` 原子切换到新版本。运行时目录、SQLite 数据库及日志不纳入 Git，以保证 Git 更新不会影响正在运行的任务。
+源文件位于平铺的 `a0.outgoing/` 文件池，Tag 不作为源目录层级；每个 Tag 的 `file_patterns` 配置决定它选择哪些 `{module}` 文件。提交后严格使用 `raw/<TAG>/<MODULE>`、`ready/<TAG>/<MODULE>`，发布到 `release/<TAG>/<VERSION>/{verilog,gds,pg,...}/`（按全局 `file_groups` 分类，文件名自带模块前缀区分）；模块排它锁 (`O_CREAT|O_EXCL`) 与全局发布锁防止并发碰撞；成功后以 `os.replace` 原子移入 ready，并执行 `chmod 664`。发布前会验证 SQLite 与物理目录一致，发布完成后清理 ready 暂存区，并将 `@latest` 原子切换到新版本。运行时目录、SQLite 数据库及日志不纳入 Git，以保证 Git 更新不会影响正在运行的任务。
 
 ### 外部 owner 源目录
 

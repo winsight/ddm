@@ -60,7 +60,7 @@ cp requirements.txt "$PACKAGE_DIR/"
 cp -r dist/offline_packages "$PACKAGE_DIR/"
 
 # Docs
-cp USER_GUIDE.md DEPLOY.md ARCHITECTURE.md "$PACKAGE_DIR/" 2>/dev/null || true
+cp docs/*.md "$PACKAGE_DIR/" 2>/dev/null || true
 
 # Install script for the offline server
 cat > "$PACKAGE_DIR/install.sh" << 'INSTALL_SCRIPT'
