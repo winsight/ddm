@@ -823,6 +823,8 @@ def check(ctx):
             for s in stale:
                 console.print(s)
             console.print(f"    [dim]Fix: rm repository/raw/.lock_*[/]")
+            console.print(f"    [yellow]⚠[/] [dim]删除前请确认对应进程已退出 (ps aux | grep ddm)，")
+            console.print(f"    [dim]否则可能导致并发写入 raw/ 和 ready/ 造成数据损坏。[/]")
         else:
             console.print(f"  [green]✓[/] No stale module locks")
 

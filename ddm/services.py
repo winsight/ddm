@@ -115,24 +115,30 @@ STALE_LOCK_SECONDS = 600
 
 
 def _acquire_lock(lock_path: Path, description: str,
-                  auto_clean_stale: bool = False) -> None:
+                  auto_clean_stale: bool = False) -> str:
     """Atomically create a lock file using O_CREAT|O_EXCL.
 
     If auto_clean_stale=True and the existing lock is older than
     STALE_LOCK_SECONDS, remove it automatically and retry (the previous
     submit process likely crashed or was SIGKILL'd).
+
+    Returns a warning string if a stale lock was auto-cleaned, else "".
     """
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         with os.fdopen(fd, "w") as f:
             f.write(f"pid={os.getpid()}\ntime={time.time()}\n")
+        return ""  # fresh lock acquired, no warning
     except FileExistsError:
         if auto_clean_stale and lock_path.exists():
             age = time.time() - lock_path.stat().st_mtime
             if age > STALE_LOCK_SECONDS:
                 logger.warning(
-                    f"Stale lock detected ({age/60:.0f}min old), auto-cleaning: {lock_path}")
+                    f"⚠ 检测到过期锁 ({age/60:.0f}min 前创建): {lock_path}")
+                logger.warning(
+                    "  自动清除中… 如果原 submit 仍在运行（如处理大文件），"
+                    "请 Ctrl+C 取消本次提交，等待原任务完成。")
                 try:
                     os.unlink(str(lock_path))
                 except OSError:
@@ -141,7 +147,8 @@ def _acquire_lock(lock_path: Path, description: str,
                 fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
                 with os.fdopen(fd, "w") as f:
                     f.write(f"pid={os.getpid()}\ntime={time.time()}\n")
-                return
+                return (f"⚠ 检测到 {age/60:.0f}min 前的过期锁并已自动清除。"
+                        f"如果原 submit 仍在运行，请立即 Ctrl+C 取消。")
         raise LockError(
             f"[Warning] {description} — lock exists: {lock_path}. "
             f"If the previous submit crashed, remove it manually: "
@@ -343,8 +350,10 @@ def submit(
 
     # ---- fast-fail: module lock ----
     mlock = config.module_lock_path(module, tag)
+    stale_warning = ""
     try:
-        _acquire_lock(mlock, f"模块 {module}/{tag} 正在提交", auto_clean_stale=True)
+        stale_warning = _acquire_lock(mlock, f"模块 {module}/{tag} 正在提交",
+                                       auto_clean_stale=True)
     except LockError as e:
         logger.warning(str(e))
         return SubmitResult("", False, str(e))
@@ -498,7 +507,10 @@ def submit(
                 f"summary={summary or '-'}"
             )
 
-            return SubmitResult(batch_uuid, True, f"Submitted: {len(source_files)} files -> {ready_tag_dir}")
+            msg = f"Submitted: {len(source_files)} files -> {ready_tag_dir}"
+            if stale_warning:
+                msg += f"\n{stale_warning}"
+            return SubmitResult(batch_uuid, True, msg)
         else:
             storage.update_batch_status(batch_uuid, STATUS_FAILED)
             storage.add_event(batch_uuid, EVENT_POST_CHECK_FAIL, "Post-check mismatch")
@@ -510,8 +522,9 @@ def submit(
         if batch_uuid:
             storage.update_batch_status(batch_uuid, STATUS_FAILED)
             storage.add_event(batch_uuid, EVENT_FAILED, "User interrupted (Ctrl+C)")
-        return SubmitResult(batch_uuid, False, "提交被用户中断 (Ctrl+C)。"
-            " 如果锁文件残留，请用 ddm check 或手动删除 raw/.lock_*。")
+        return SubmitResult(batch_uuid, False,
+            "提交被用户中断 (Ctrl+C)。锁文件已释放，可重新提交。\n"
+            "  如果提示锁文件存在，请用 ddm check 检查是否有残留锁。")
     except Exception as exc:
         logger.exception(f"Submit failed: {exc}")
         if batch_uuid:
