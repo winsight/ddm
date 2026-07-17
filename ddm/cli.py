@@ -804,29 +804,45 @@ def check(ctx):
     except KeyError:
         console.print(f"  [yellow]![/] Shared group '{shared_group}' not found on system")
 
-    # Stale lock detection (common after kill -9 or crash)
+    # Stale lock detection — two-pass:
+    #   PID dead → stale immediately (crash / kill -9)
+    #   PID alive but lock older than stale_lock_minutes → warn (long submit)
     stale_minutes = cfg.stale_lock_minutes
     raw_dir = Path(cfg.repository_root) / "raw"
-    if stale_minutes > 0 and raw_dir.exists():
-        stale = []
+    if raw_dir.exists():
+        stale = []   # definitely safe to remove (pid dead)
+        alive = []   # running but lock is old (long submit?)
         now = time.time()
         for lf in raw_dir.glob(".lock_*"):
             age_min = (now - lf.stat().st_mtime) / 60
-            if age_min > stale_minutes:
-                try:
-                    pid_line = lf.read_text().split("\n")[0]
-                    pid = pid_line.replace("pid=", "")
-                except Exception:
-                    pid = "?"
-                stale.append(f"    .lock → {lf.name} (pid={pid}, {age_min:.0f}min ago)")
+            try:
+                content = lf.read_text().split("\n")
+                pid_str = content[0].replace("pid=", "") if content else "?"
+                pid = int(pid_str)
+                # Check if process still exists (signal 0 = no-op test)
+                os.kill(pid, 0)
+                pid_alive = True
+            except (ValueError, OSError, ProcessLookupError):
+                pid_alive = False
+            except Exception:
+                pid = "?"
+                pid_alive = False
+
+            if not pid_alive:
+                stale.append(f"    .lock → {lf.name} (pid={pid}, 进程已退出, {age_min:.0f}min)")
+            elif stale_minutes > 0 and age_min > stale_minutes:
+                alive.append(f"    .lock → {lf.name} (pid={pid}, 仍在运行但 {age_min:.0f}min 未释放)")
+
         if stale:
-            console.print(f"  [yellow]![/] Stale lock files found (submit may have crashed):")
+            console.print(f"  [yellow]![/] Stale lock files (进程已退出，可安全清理):")
             for s in stale:
                 console.print(s)
             console.print(f"    [dim]Fix: rm repository/raw/.lock_*[/]")
-            console.print(f"    [yellow]⚠[/] [dim]删除前请确认对应进程已退出 (ps aux | grep ddm)，")
-            console.print(f"    [dim]否则可能导致并发写入 raw/ 和 ready/ 造成数据损坏。[/]")
-        else:
+        if alive:
+            console.print(f"  [yellow]![/] 长期运行中的锁 (请确认是否正常):")
+            for s in alive:
+                console.print(s)
+        if not stale and not alive:
             console.print(f"  [green]✓[/] No stale module locks")
 
     # psutil
