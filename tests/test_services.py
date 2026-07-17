@@ -162,7 +162,7 @@ class TestFindSourceFiles:
         files = find_source_files(
             "a0.outgoing/{user}/{module}",
             ["{module}.v.gz", "{module}.hier.gds"],
-            "wangshuai",
+            "w00949819",
             "CPU",
         )
         assert any("CPU.v.gz" in f for f in files)

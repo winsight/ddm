@@ -297,12 +297,13 @@ def submit(
     # ---- fast-fail: module ownership ----
     if not config.is_module_owner(module, username):
         owners = config.module_owners(module)
+        admins_hint = f"，管理员: {', '.join(config.admins)}" if config.admins else ""
         if owners:
-            msg = (f"无权提交模块 '{module}'。该模块的 owner 为: {', '.join(owners)}"
-                   f"。如需提交请联系管理员。")
+            msg = (f"用户 [{username}] 无权提交模块 [{module}]。"
+                   f"该模块 owner: {', '.join(owners)}{admins_hint}。")
         else:
-            msg = (f"模块 '{module}' 未在 config.yaml 中配置 owners 列表。"
-                   f"请先在 modules.{module}.owners 中添加可提交用户。")
+            msg = (f"模块 [{module}] 未在 config.yaml 中配置 owners 列表。"
+                   f"请在 modules.{module}.owners 中添加可提交用户。")
         logger.warning(msg)
         return SubmitResult("", False, msg)
 
@@ -337,7 +338,9 @@ def submit(
         # ---- discover source files ----
         source_files = find_source_files(config.outgoing_root, patterns, username, module)
         if not source_files:
-            msg = f"No files matched in {config.outgoing_root} for tag={tag} user={username} module={module}"
+            expanded = config.outgoing_root.format(user=username, module=module)
+            msg = (f"在 {expanded} 中未找到匹配文件 "
+                   f"(patterns: {patterns}, 请确认 a0.outgoing 中有对应模块的数据)")
             logger.error(msg)
             storage.update_batch_status(batch_uuid, STATUS_FAILED)
             storage.add_event(batch_uuid, EVENT_FAILED, msg)
@@ -404,7 +407,9 @@ def submit(
         else:
             storage.update_batch_status(batch_uuid, STATUS_FAILED)
             storage.add_event(batch_uuid, EVENT_PRE_CHECK_FAIL, "Metadata mismatch")
-            return SubmitResult(batch_uuid, False, "pre_check failed: metadata mismatch")
+            return SubmitResult(batch_uuid, False,
+                f"pre_check 失败: 文件校验不匹配。请检查 a0.outgoing 源文件是否完整，"
+                f"必要时重新提交。")
 
         # ---- run gates (delegated to gates/runner.py) ----
         if gate_defs:
@@ -455,7 +460,8 @@ def submit(
             storage.update_batch_status(batch_uuid, STATUS_SUBMITTED)
             storage.add_event(batch_uuid, EVENT_SUBMITTED, "Batch ready for release")
             _step("Delivering", "Done", advance=True)
-            logger.info(f"Submit complete: {batch_uuid} -> SUBMITTED")
+            logger.info(f"Submit complete: {batch_uuid} -> SUBMITTED "
+                        f"({len(source_files)} files, {total_size} bytes)")
 
             # Write operation log to the owner's a0.outgoing directory
             _write_op_log(
@@ -469,7 +475,8 @@ def submit(
         else:
             storage.update_batch_status(batch_uuid, STATUS_FAILED)
             storage.add_event(batch_uuid, EVENT_POST_CHECK_FAIL, "Post-check mismatch")
-            return SubmitResult(batch_uuid, False, "post_check failed: files corrupted after gate")
+            return SubmitResult(batch_uuid, False,
+                "post_check 失败: gate 后文件损坏。请联系管理员检查 raw/ 和 ready/ 目录。")
 
     except Exception as exc:
         logger.exception(f"Submit failed: {exc}")
@@ -582,7 +589,9 @@ def release(
     tag_cfg = config.tag_config(tag)
     if tag_cfg and tag_cfg.release_users and username:
         if username not in tag_cfg.release_users and username not in config.admins:
-            msg = f"User '{username}' not authorized to release tag '{tag}'. Allowed: {tag_cfg.release_users}"
+            msg = (f"用户 [{username}] 无权发布 {tag}。"
+                   f"已授权: {', '.join(tag_cfg.release_users)}。"
+                   f"请联系管理员添加。")
             logger.warning(msg)
             return ReleaseResult(False, msg)
 
@@ -606,14 +615,25 @@ def release(
     if module:
         mlock = raw_dir / f".lock_{module}_{tag}"
         if mlock.exists():
-            msg = f"模块 {module} 正在提交中，Release 被阻断 ({mlock.name})"
+            msg = (f"模块 [{module}] 正在提交 {tag} 数据，"
+                   f"Release 被阻断。请等待其 submit 完成后再发布。")
             logger.warning(msg)
             return ReleaseResult(False, msg)
     else:
         active_locks = list(raw_dir.glob(f".lock_*_{tag}")) if raw_dir.exists() else []
         if active_locks:
-            lock_names = [lck.name for lck in active_locks]
-            msg = f"模块正在提交中，Release 被阻断 (active locks: {lock_names})"
+            # Parse lock filename (.lock_{MODULE}_{TAG}) into module names
+            blocked = []
+            tag_suffix = f"_{tag}"
+            for lck in active_locks:
+                inner = lck.name[len(".lock_"):]  # "CPU_PV_ITER"
+                if inner.endswith(tag_suffix):
+                    mod_name = inner[:-len(tag_suffix)]  # "CPU"
+                else:
+                    mod_name = inner
+                blocked.append(mod_name)
+            msg = (f"以下模块正在提交 {tag} 数据，Release 被阻断: "
+                   f"{', '.join(blocked)}。请等待 submit 完成后再发布。")
             logger.warning(msg)
             return ReleaseResult(False, msg)
 
@@ -627,20 +647,23 @@ def release(
 
         if missing:
             if not allow_inherit:
-                msg = (f"Full release (-A) requires all modules to be submitted. "
-                       f"Missing: {sorted(missing)}. "
-                       f"Use --inherit to carry them forward from previous version.")
+                ready_mods = submitted_modules if submitted_modules else {"(无)"}
+                msg = (f"全量发布 (-A) 要求所有模块均已提交。\n"
+                       f"  已就绪: {sorted(ready_mods)}\n"
+                       f"  缺失:   {sorted(missing)}\n"
+                       f"  使用 --inherit 可从上一版本继承缺失模块。")
                 logger.error(msg)
                 return ReleaseResult(False, msg)
             logger.info(f"-A with --inherit: modules {sorted(missing)} will be "
                         f"inherited from previous version")
 
     if not batches:
-        # This can happen with -A --inherit when everything inherits
         if release_all and allow_inherit:
             logger.info("No new SUBMITTED batches — all modules will inherit")
         else:
-            return ReleaseResult(False, f"No SUBMITTED batches for tag={tag}")
+            hint = f"模块 [{module}]" if module else f"tag [{tag}]"
+            return ReleaseResult(False,
+                f"{hint} 没有任何已提交 (SUBMITTED) 的数据。请先执行 ddm submit。")
 
     for batch in batches:
         batch_uuid = batch["batch_uuid"]
@@ -648,7 +671,9 @@ def release(
         for f in files:
             ready_path = f.get("ready_path", "")
             if ready_path and not os.path.exists(ready_path):
-                msg = f"Split-brain detected: {ready_path} missing for batch {batch_uuid}"
+                fname = Path(ready_path).name if ready_path else "?"
+                msg = (f"数据不一致: ready/ 中文件 {fname} 已丢失 "
+                       f"(batch {batch_uuid[:8]})。可能被手动删除，请重新提交。")
                 logger.error(msg)
                 storage.update_batch_status(batch_uuid, STATUS_FAILED)
                 storage.add_event(batch_uuid, EVENT_FAILED, msg)
