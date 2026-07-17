@@ -805,13 +805,14 @@ def check(ctx):
         console.print(f"  [yellow]![/] Shared group '{shared_group}' not found on system")
 
     # Stale lock detection (common after kill -9 or crash)
+    stale_minutes = cfg.stale_lock_minutes
     raw_dir = Path(cfg.repository_root) / "raw"
-    if raw_dir.exists():
+    if stale_minutes > 0 and raw_dir.exists():
         stale = []
         now = time.time()
         for lf in raw_dir.glob(".lock_*"):
             age_min = (now - lf.stat().st_mtime) / 60
-            if age_min > 10:  # stale after 10 minutes
+            if age_min > stale_minutes:
                 try:
                     pid_line = lf.read_text().split("\n")[0]
                     pid = pid_line.replace("pid=", "")

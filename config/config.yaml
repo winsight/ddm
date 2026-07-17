@@ -36,6 +36,13 @@ file_groups:
 # 目标服务器通常有 staff 或 wheel 组，开发机可按实际设置。
 shared_group: wheel
 
+# ══════════════════════════════════════════════════════
+# 过期锁自动清理（分钟）
+# ══════════════════════════════════════════════════════
+# 超过此时间的残留锁文件（如 kill -9 导致）会在下次 submit 时自动清除。
+# 设为 0 则禁用自动清理，始终需要手动删除。
+stale_lock_minutes: 10
+
 # a0.outgoing 源数据根目录，支持 {user} {module} 占位符
 # 每个工程师在自己的 a0.outgoing 下平铺文件（无 tag 子目录）
 outgoing_root: ./a0.outgoing/{user}/{module}

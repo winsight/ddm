@@ -34,6 +34,7 @@ class TagConfig(BaseModel):
 
 class AppConfig(BaseModel):
     shared_group: str = "staff"
+    stale_lock_minutes: int = 10  # 0 = disable auto-clean
     file_groups: Dict[str, List[str]] = {}
     modules: Dict[str, ModuleOwnerConfig] = {}
     admins: List[str] = []
@@ -147,6 +148,11 @@ class Config:
 
     def release_dir(self) -> Path:
         return Path(self.repository_root) / "release"
+
+    @property
+    def stale_lock_minutes(self) -> int:
+        """Return stale lock timeout in minutes (0 = disabled)."""
+        return self._model.stale_lock_minutes if self._model else 10
 
     @property
     def shared_group(self) -> str:

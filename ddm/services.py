@@ -110,17 +110,15 @@ class LockError(Exception):
     """Raised when a lock prevents an operation."""
 
 
-# Stale lock threshold in seconds (10 minutes)
-STALE_LOCK_SECONDS = 600
-
-
 def _acquire_lock(lock_path: Path, description: str,
-                  auto_clean_stale: bool = False) -> str:
+                  auto_clean_stale: bool = False,
+                  stale_seconds: int = 600) -> str:
     """Atomically create a lock file using O_CREAT|O_EXCL.
 
     If auto_clean_stale=True and the existing lock is older than
-    STALE_LOCK_SECONDS, remove it automatically and retry (the previous
+    stale_seconds, remove it automatically and retry (the previous
     submit process likely crashed or was SIGKILL'd).
+    stale_seconds=0 disables auto-clean.
 
     Returns a warning string if a stale lock was auto-cleaned, else "".
     """
@@ -131,9 +129,9 @@ def _acquire_lock(lock_path: Path, description: str,
             f.write(f"pid={os.getpid()}\ntime={time.time()}\n")
         return ""  # fresh lock acquired, no warning
     except FileExistsError:
-        if auto_clean_stale and lock_path.exists():
+        if auto_clean_stale and stale_seconds > 0 and lock_path.exists():
             age = time.time() - lock_path.stat().st_mtime
-            if age > STALE_LOCK_SECONDS:
+            if age > stale_seconds:
                 logger.warning(
                     f"⚠ 检测到过期锁 ({age/60:.0f}min 前创建): {lock_path}")
                 logger.warning(
@@ -353,7 +351,8 @@ def submit(
     stale_warning = ""
     try:
         stale_warning = _acquire_lock(mlock, f"模块 {module}/{tag} 正在提交",
-                                       auto_clean_stale=True)
+                                       auto_clean_stale=True,
+                                       stale_seconds=config.stale_lock_minutes * 60)
     except LockError as e:
         logger.warning(str(e))
         return SubmitResult("", False, str(e))
