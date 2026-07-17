@@ -193,8 +193,85 @@ def _parse_time_filter(time_str: str) -> float:
 
 TAG_TYPE = click.STRING  # csh 补全走 complete 规则 + __complete_tags，不依赖 Click shell_complete
 
+# ---------------------------------------------------------------------------
+# role-based command visibility
+# ---------------------------------------------------------------------------
 
-@click.group()
+# Commands visible to all users (module owners)
+_PUBLIC_COMMANDS = {"submit", "status", "version"}
+
+# Commands visible only to tag admins and global admins
+_ADMIN_COMMANDS = {"release", "list", "check"}
+
+# All registered command names (populated at import time)
+_ALL_COMMANDS = _PUBLIC_COMMANDS | _ADMIN_COMMANDS
+
+
+def _get_user() -> str:
+    return os.environ.get("USER", "unknown")
+
+
+def _load_config_safe(ctx) -> "Config | None":
+    """Load config from click context, caching on ctx.obj for the request."""
+    if ctx.obj is None:
+        ctx.ensure_object(dict)
+    if "_config" not in ctx.obj:
+        try:
+            config_path = ctx.obj.get("config_path", "config/config.yaml")
+            ctx.obj["_config"] = Config(config_path)
+        except Exception:
+            ctx.obj["_config"] = None
+    return ctx.obj["_config"]
+
+
+def _is_tag_admin(username: str, cfg) -> bool:
+    """True if user is in admins list OR is a release_user for any tag."""
+    if not cfg:
+        return False
+    if username in cfg.admins:
+        return True
+    for tag in cfg.tag_names():
+        if username in cfg.release_users_for(tag):
+            return True
+    return False
+
+
+class RoleBasedGroup(click.Group):
+    """Click Group that shows different commands based on user role.
+
+    Regular users (module owners):  submit, status, version
+    Tag admins + global admins:     all commands
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Mark admin-only commands hidden at registration time.
+        # They are unhidden dynamically in list_commands / get_command
+        # when the current user is authorized.
+        for cmd_name in _ADMIN_COMMANDS:
+            if cmd_name in self.commands:
+                self.commands[cmd_name].hidden = True
+
+    def list_commands(self, ctx):
+        base = super().list_commands(ctx)
+        cfg = _load_config_safe(ctx)
+        if _is_tag_admin(_get_user(), cfg):
+            return base  # show all, including hidden
+        return [c for c in base if c in _PUBLIC_COMMANDS]
+
+    def get_command(self, ctx, cmd_name):
+        cfg = _load_config_safe(ctx)
+        if cmd_name in _ADMIN_COMMANDS and not _is_tag_admin(_get_user(), cfg):
+            console.print(
+                f"[red]Error:[/] '{cmd_name}' is restricted to tag admins.\n"
+                f"  Contact admin to be added to a tag's release_users "
+                f"in config.yaml."
+            )
+            ctx.exit(1)
+        return super().get_command(ctx, cmd_name)
+
+
+@click.group(cls=RoleBasedGroup)
 @click.option(
     "-c", "--config",
     default="config/config.yaml",
@@ -209,6 +286,8 @@ def main(ctx, config):
     """
     ctx.ensure_object(dict)
     ctx.obj["config_path"] = config
+    # Preload config once for subsequent role checks
+    _load_config_safe(ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -741,11 +820,13 @@ def check(ctx):
 
 
 @main.command("__complete_commands", hidden=True)
-def _complete_commands():
-    """Print command names for csh complete script (one per line)."""
-    for cmd in sorted(main.commands):
-        if not cmd.startswith("_"):
-            click.echo(cmd)
+@click.pass_context
+def _complete_commands(ctx):
+    """Print visible command names for csh complete script (one per line)."""
+    cfg = _load_config_safe(ctx)
+    visible = main.list_commands(ctx)
+    for cmd in sorted(visible):
+        click.echo(cmd)
 
 
 @main.command("__complete_tags", hidden=True)
