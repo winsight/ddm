@@ -598,6 +598,25 @@ def release(
     else:
         logger.info(f"Appending modules to existing version: {version}")
 
+    # ---- fast-fail: lock check BEFORE touching any data ----
+    # -m MODULE: only check THAT module's lock.
+    # -A:        check ALL modules — a submit in progress means ready/ data
+    #            could be half-written when release copies it.
+    raw_dir = config.raw_dir()
+    if module:
+        mlock = raw_dir / f".lock_{module}_{tag}"
+        if mlock.exists():
+            msg = f"模块 {module} 正在提交中，Release 被阻断 ({mlock.name})"
+            logger.warning(msg)
+            return ReleaseResult(False, msg)
+    else:
+        active_locks = list(raw_dir.glob(f".lock_*_{tag}")) if raw_dir.exists() else []
+        if active_locks:
+            lock_names = [lck.name for lck in active_locks]
+            msg = f"模块正在提交中，Release 被阻断 (active locks: {lock_names})"
+            logger.warning(msg)
+            return ReleaseResult(False, msg)
+
     batches = storage.get_submitted_batches(tag=tag, module=module)
 
     # ---- -A: verify all configured modules are accounted for ----
@@ -662,16 +681,6 @@ def release(
                    f"version(s) have missing files: {sorted(missing_versions)}")
             integrity_warnings = [msg] + missing_details
             logger.warning(msg)
-
-    # ---- fast-fail: check no module is currently submitting ----
-    raw_dir = config.raw_dir()
-    if raw_dir.exists():
-        active_locks = list(raw_dir.glob(f".lock_*_{tag}"))
-        if active_locks:
-            lock_names = [lck.name for lck in active_locks]
-            msg = f"模块正在提交中，Release 被阻断 (active locks: {lock_names})"
-            logger.warning(msg)
-            return ReleaseResult(False, msg)
 
     try:
         _acquire_lock(glock, "全局 Release 进行中")
