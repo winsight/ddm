@@ -1,4 +1,14 @@
-"""CLI interaction layer — Click commands with Rich terminal output."""
+"""CLI interaction layer — Click commands with Rich terminal output.
+
+Shell completion:
+  tcsh → source ddm.complete.csh                    (方案 A: 纯原生, 零依赖)
+  bash → eval "$(register-python-argcomplete ddm)"   (方案 B: argcomplete)
+  zsh  → 同 bash
+
+方案 A 和 B 的补全规则在此文件统一管理: 方案 A 通过隐藏 __complete_*
+子命令暴露动态数据, 方案 B 通过 argcomplete Completer 桥接到 Click.
+"""
+# PYTHON_ARGCOMPLETE_OK
 
 from __future__ import annotations
 
@@ -19,7 +29,114 @@ from ddm.services import HAS_BLAKE3, release, submit
 from ddm.storage import Storage
 from ddm.version import __version__
 
+# ---- argcomplete (方案 B: 可选依赖, 不影响方案 A) ----
+try:
+    import argcomplete
+    from argcomplete.completers import FilesCompleter
+
+    HAS_ARGCOMPLETE = True
+except ImportError:
+    HAS_ARGCOMPLETE = False
+    FilesCompleter = None  # type: ignore
+
 console = Console()
+
+# ---------------------------------------------------------------------------
+# argcomplete → Click bridge（方案 B, 仅 argcomplete 安装后生效）
+# ---------------------------------------------------------------------------
+
+
+def _complete_release_versions(prefix, **kwargs):
+    """Dynamic completer: scan release/ dir for version directories."""
+    release_base = Path("./repository/release")
+    if not release_base.is_dir():
+        return []
+    versions = set()
+    for tag_dir in release_base.iterdir():
+        if not tag_dir.is_dir():
+            continue
+        for vdir in tag_dir.iterdir():
+            if vdir.is_dir() and not vdir.name.startswith(".") \
+               and vdir.name != "@latest":
+                versions.add(vdir.name)
+    return sorted(v for v in versions if v.startswith(prefix))
+
+
+def _complete_tags(prefix, **kwargs):
+    """Dynamic completer: configured tags from config.yaml."""
+    try:
+        cfg = Config("config/config.yaml")
+        return [t for t in sorted(cfg.tag_names()) if t.startswith(prefix)]
+    except Exception:
+        return []
+
+
+def _complete_modules(prefix, **kwargs):
+    """Dynamic completer: configured modules from config.yaml."""
+    try:
+        cfg = Config("config/config.yaml")
+        mods = set(cfg._raw.get("modules", {}).keys())
+        for tag in cfg.tag_names():
+            mods.update(cfg.modules_for(tag))
+        return [m for m in sorted(mods) if m.startswith(prefix)]
+    except Exception:
+        return []
+
+
+def _argcomplete_bridge():
+    """Wire argcomplete to Click's command tree.
+
+    Called once at startup when argcomplete detects a completion context
+    (env var _ARGCOMPLETE is set).  Maps Click command names to their
+    known options for argcomplete to present.
+    """
+    if not HAS_ARGCOMPLETE:
+        return
+
+    import argparse as _argparse
+
+    # Build a lightweight argparse that mirrors Click's command structure
+    parser = _argparse.ArgumentParser(prog="ddm")
+
+    sub = parser.add_subparsers(dest="__cmd")
+    sub.required = False
+
+    # ---- submit ----
+    p_s = sub.add_parser("submit")
+    p_s.add_argument("-m", "--module").completer = _complete_modules
+    p_s.add_argument("-t", "--tag").completer = _complete_tags
+    p_s.add_argument("-s", "--summary")
+    p_s.add_argument("-c", "--config").completer = FilesCompleter(
+        allowednames=("*.yaml", "*.yml"), directories=False)
+
+    # ---- release ----
+    p_r = sub.add_parser("release")
+    p_r.add_argument("-t", "--tag").completer = _complete_tags
+    p_r.add_argument("-A", "--all", action="store_true")
+    p_r.add_argument("-m", "--module").completer = _complete_modules
+    p_r.add_argument("-v", "--version").completer = _complete_release_versions
+    p_r.add_argument("--inherit", action="store_true")
+
+    # ---- status ----
+    p_st = sub.add_parser("status")
+    p_st.add_argument("-m", "--module").completer = _complete_modules
+    p_st.add_argument("-d", "--date")
+
+    # ---- list ----
+    p_l = sub.add_parser("list")
+    p_l.add_argument("-t", "--tag").completer = _complete_tags
+    p_l.add_argument("-A", "--all", action="store_true")
+    p_l.add_argument("-m", "--module").completer = _complete_modules
+    p_l.add_argument("-v", "--verbose", action="store_true")
+
+    # ---- check ----
+    sub.add_parser("check")
+
+    # ---- version ----
+    sub.add_parser("version")
+
+    argcomplete.autocomplete(parser)
+
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -667,6 +784,14 @@ def _complete_modules(ctx):
         pass
 
 
+@main.command("__complete_versions", hidden=True)
+def _complete_versions():
+    """Print release version names for csh complete script."""
+    versions = _complete_release_versions("")
+    for v in versions:
+        click.echo(v)
+
+
 # ---------------------------------------------------------------------------
 # version — detailed version info
 # ---------------------------------------------------------------------------
@@ -698,7 +823,14 @@ def _version():
 
 
 def _cli_entry():
-    """Top-level entry: handle -V/--version before Click parsing."""
+    """Top-level entry: argcomplete activation, then -V/--version shortcut.
+
+    _argcomplete_bridge() is a no-op unless argcomplete is installed AND
+    the process is running in a shell completion context (env var
+    _ARGCOMPLETE set).  In normal usage it costs one importlib check.
+    """
+    _argcomplete_bridge()
+
     if len(sys.argv) >= 2 and sys.argv[1] in ("-V", "--version"):
         import platform as _platform
         console.print(f"[bold cyan]ddm[/] [green]{__version__}[/]")
