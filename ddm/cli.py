@@ -804,6 +804,28 @@ def check(ctx):
     except KeyError:
         console.print(f"  [yellow]![/] Shared group '{shared_group}' not found on system")
 
+    # Stale lock detection (common after kill -9 or crash)
+    raw_dir = Path(cfg.repository_root) / "raw"
+    if raw_dir.exists():
+        stale = []
+        now = time.time()
+        for lf in raw_dir.glob(".lock_*"):
+            age_min = (now - lf.stat().st_mtime) / 60
+            if age_min > 10:  # stale after 10 minutes
+                try:
+                    pid_line = lf.read_text().split("\n")[0]
+                    pid = pid_line.replace("pid=", "")
+                except Exception:
+                    pid = "?"
+                stale.append(f"    .lock → {lf.name} (pid={pid}, {age_min:.0f}min ago)")
+        if stale:
+            console.print(f"  [yellow]![/] Stale lock files found (submit may have crashed):")
+            for s in stale:
+                console.print(s)
+            console.print(f"    [dim]Fix: rm repository/raw/.lock_*[/]")
+        else:
+            console.print(f"  [green]✓[/] No stale module locks")
+
     # psutil
     try:
         import psutil

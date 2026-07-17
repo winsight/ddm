@@ -110,15 +110,42 @@ class LockError(Exception):
     """Raised when a lock prevents an operation."""
 
 
-def _acquire_lock(lock_path: Path, description: str) -> None:
-    """Atomically create a lock file using O_CREAT|O_EXCL."""
+# Stale lock threshold in seconds (10 minutes)
+STALE_LOCK_SECONDS = 600
+
+
+def _acquire_lock(lock_path: Path, description: str,
+                  auto_clean_stale: bool = False) -> None:
+    """Atomically create a lock file using O_CREAT|O_EXCL.
+
+    If auto_clean_stale=True and the existing lock is older than
+    STALE_LOCK_SECONDS, remove it automatically and retry (the previous
+    submit process likely crashed or was SIGKILL'd).
+    """
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         with os.fdopen(fd, "w") as f:
             f.write(f"pid={os.getpid()}\ntime={time.time()}\n")
     except FileExistsError:
-        raise LockError(f"[Warning] {description} — lock exists: {lock_path}")
+        if auto_clean_stale and lock_path.exists():
+            age = time.time() - lock_path.stat().st_mtime
+            if age > STALE_LOCK_SECONDS:
+                logger.warning(
+                    f"Stale lock detected ({age/60:.0f}min old), auto-cleaning: {lock_path}")
+                try:
+                    os.unlink(str(lock_path))
+                except OSError:
+                    pass
+                # Retry once after cleaning
+                fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                with os.fdopen(fd, "w") as f:
+                    f.write(f"pid={os.getpid()}\ntime={time.time()}\n")
+                return
+        raise LockError(
+            f"[Warning] {description} — lock exists: {lock_path}. "
+            f"If the previous submit crashed, remove it manually: "
+            f"rm {lock_path}")
 
 
 def _release_lock(lock_path: Path) -> None:
@@ -317,7 +344,7 @@ def submit(
     # ---- fast-fail: module lock ----
     mlock = config.module_lock_path(module, tag)
     try:
-        _acquire_lock(mlock, f"模块 {module}/{tag} 正在提交")
+        _acquire_lock(mlock, f"模块 {module}/{tag} 正在提交", auto_clean_stale=True)
     except LockError as e:
         logger.warning(str(e))
         return SubmitResult("", False, str(e))
@@ -478,6 +505,13 @@ def submit(
             return SubmitResult(batch_uuid, False,
                 "post_check 失败: gate 后文件损坏。请联系管理员检查 raw/ 和 ready/ 目录。")
 
+    except KeyboardInterrupt:
+        logger.warning(f"Submit interrupted by user (Ctrl+C): {batch_uuid[:8] if batch_uuid else '?'}")
+        if batch_uuid:
+            storage.update_batch_status(batch_uuid, STATUS_FAILED)
+            storage.add_event(batch_uuid, EVENT_FAILED, "User interrupted (Ctrl+C)")
+        return SubmitResult(batch_uuid, False, "提交被用户中断 (Ctrl+C)。"
+            " 如果锁文件残留，请用 ddm check 或手动删除 raw/.lock_*。")
     except Exception as exc:
         logger.exception(f"Submit failed: {exc}")
         if batch_uuid:
@@ -872,6 +906,10 @@ def release(
         return ReleaseResult(True, f"Released {tag}/{version} ({total_files} files, {len(batches)} batches)",
                             version, integrity_warnings=integrity_warnings)
 
+    except KeyboardInterrupt:
+        logger.warning(f"Release interrupted by user (Ctrl+C): {version}")
+        return ReleaseResult(False,
+            "发布被用户中断 (Ctrl+C)。staging 目录已清理，可重新发布。", version)
     except Exception as exc:
         logger.exception(f"Release failed: {exc}")
         return ReleaseResult(False, str(exc), version)
