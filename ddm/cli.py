@@ -617,7 +617,7 @@ def _list_summary(storage, batches, tag, cfg):
         for pb in prev_batches:
             if pb["batch_uuid"] != b["batch_uuid"] and pb["created_at"] < b["created_at"]:
                 pfiles = storage.get_files(pb["batch_uuid"])
-                prev_total[b["batch_uuid"]] = sum(f.get("file_size", 0) for f in pfiles)
+                prev_total[b["batch_uuid"]] = sum(f.get("file_size") or f.get("source_size", 0) for f in pfiles)
                 break
 
     table = Table(title=f"Records for tag: {tag}")
@@ -639,7 +639,7 @@ def _list_summary(storage, batches, tag, cfg):
     for b in batches:
         files = storage.get_files(b["batch_uuid"])
         file_count = len(files)
-        total_size = sum(f.get("file_size", 0) for f in files)
+        total_size = sum(f.get("file_size") or f.get("source_size", 0) for f in files)
 
         st = b["status"]
         color = status_colors.get(st, "white")
@@ -671,7 +671,7 @@ def _list_verbose(storage, batches, tag):
     """Per-file detail table with BLAKE3, timestamp, and file size delta."""
     for b in batches:
         files = storage.get_files(b["batch_uuid"])
-        total_size = sum(f.get("file_size", 0) for f in files)
+        total_size = sum(f.get("file_size") or f.get("source_size", 0) for f in files)
         st = b["status"]
         status_colors = {"PENDING": "yellow", "SUBMITTED": "cyan", "RELEASED": "green", "FAILED": "red"}
         color = status_colors.get(st, "white")
@@ -684,7 +684,7 @@ def _list_verbose(storage, batches, tag):
                 if pb["batch_uuid"] != b["batch_uuid"] and pb["created_at"] < b["created_at"]:
                     for pf in storage.get_files(pb["batch_uuid"]):
                         pname = Path(pf["source_path"]).name if pf.get("source_path") else ""
-                        prev_file_sizes[pname] = pf.get("file_size", 0)
+                        prev_file_sizes[pname] = pf.get("file_size") or pf.get("source_size", 0)
                     break
 
         console.print(f"\n[bold]{b['module']}[/]  [{color}]{st}[/]  "
@@ -700,7 +700,7 @@ def _list_verbose(storage, batches, tag):
 
         for f in files:
             fname = Path(f["source_path"]).name if f.get("source_path") else "-"
-            fsize = f.get("file_size", 0)
+            fsize = f.get("file_size") or f.get("source_size", 0)
             blake3_short = f.get("blake3_hash", "")[:12] if f.get("blake3_hash") else "-"
             mtime_val = f.get("source_mtime", 0)
             mtime_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime_val)) if mtime_val else "-"

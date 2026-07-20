@@ -436,7 +436,9 @@ def submit(
             dest_path = raw_run_dir / src_path.name
             src_stat = os.stat(src)
 
-            storage.add_file(batch_uuid, src, 0, "",
+            storage.add_file(batch_uuid, src,
+                             file_size=src_stat.st_size,
+                             blake3_hash="",
                              source_size=src_stat.st_size,
                              source_mtime=src_stat.st_mtime)
             file_size, blake3_hex = streaming_copy(src, str(dest_path))
