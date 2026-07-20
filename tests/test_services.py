@@ -36,7 +36,7 @@ class TestConfig:
         cfg = Config("config/config.yaml")
         patterns = cfg.file_patterns_for("PV_ITER")
         assert "{module}.v.gz" in patterns
-        assert "{module}.hier.gds" in patterns
+        assert "{module}.v.pg" in patterns
 
     def test_gates_release_users(self):
         from ddm.config import Config

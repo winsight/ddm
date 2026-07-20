@@ -482,12 +482,16 @@ def _release(ctx, tag, release_all, module, version, inherit):
 
 
 def _fmt_size(n: int) -> str:
-    """Human-readable file size."""
-    for unit in ("B", "KB", "MB", "GB"):
-        if n < 1024:
-            return f"{n}{unit}"
-        n //= 1024
-    return f"{n}TB"
+    """Human-readable file size with one decimal place."""
+    if n == 0:
+        return "0B"
+    units = ("B", "KB", "MB", "GB", "TB")
+    size = float(n)
+    for unit in units:
+        if size < 1024:
+            return f"{size:.0f}{unit}" if unit == "B" else f"{size:.1f}{unit}"
+        size /= 1024
+    return f"{size:.1f}TB"
 
 
 def _fmt_delta(new: int, old: int) -> str:
