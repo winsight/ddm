@@ -481,21 +481,31 @@ flowchart TD
 
 ---
 
-### 4.7 发布到已有版本（追加）
+### 4.7 发布到已有版本（追加/覆盖）
 
-如果 `-v` 指定的版本目录已存在，则为**追加模式**：
+**`-m MODULE`**：始终允许追加到已有版本（增量更新，添加一个模块的数据）。
+
+**`-A`**：全量发布到已有版本是破坏性操作（覆盖所有模块），默认**拒绝**。
 
 ```mermaid
 flowchart TD
     VCHECK{"release_version_dir<br/>已存在?"}
     VCHECK -->|"✗ 新版本"| NEW_VER["staging/ ──os.rename()──▶ VERSION/<br/>原子创建整个版本目录"]
-    VCHECK -->|"✓ 已存在"| MERGE["staging/ ──merge_dirs()──▶ VERSION/<br/>覆盖同名文件，保留旧文件"]
+    VCHECK -->|"✓ 已存在"| MODE{"-m MODULE 还是 -A?"}
+    MODE -->|"-m MODULE"| MERGE["_merge_dirs() → VERSION/<br/>追加此模块，保留其他模块"]
+    MODE -->|"-A"| BLOCK{"--force?"}
+    BLOCK -->|"✗ 否"| REJECT["✗ 拒绝<br/>版本 X 已存在。全量发布 (-A)<br/>覆盖已有版本属破坏性操作。<br/>如需覆盖请使用 --force。"]
+    BLOCK -->|"✓ 是"| OVERWRITE["_merge_dirs() → VERSION/<br/>覆盖所有模块"]
 
-    subgraph MERGE_DETAIL["merge_dirs 详细行为"]
+    subgraph MERGE_DETAIL["_merge_dirs 详细行为"]
         direction TB
         M1["同名文件 → shutil.copy2 覆盖"]
         M2["新文件 → 直接复制"]
         M3["旧文件 → 保留不动"]
+    end
+
+    style REJECT fill:#e44,stroke:#333,color:#fff
+```
     end
 
     style NEW_VER fill:#26a,stroke:#333,color:#fff

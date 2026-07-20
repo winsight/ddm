@@ -6,7 +6,7 @@
 
 | 配置项 | 值 |
 |--------|-----|
-| 站点地址 | `https://filebox.a.wssss.org.cn` |
+| 站点地址 | `https://filebox.a.wssss.org.cn:8443` |
 | 管理密码 | `winsight2` |
 | 过期方式 | `count`（按次） |
 | 过期次数 | `10` |
