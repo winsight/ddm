@@ -62,7 +62,14 @@ class Config:
         self.load()
 
     def load(self):
-        path = Path(self.config_path)
+        path = Path(self.config_path).resolve()
+        # Config paths (./a0.outgoing, ./repository) are relative to the
+        # project root. With the standard layout (config/config.yaml),
+        # that is two levels up from the config file.
+        if path.parent.name == "config" and not path.parent.parent.name.startswith("/"):
+            self._project_root = str(path.parent.parent)
+        else:
+            self._project_root = str(path.parent)
         if not path.exists():
             raise FileNotFoundError(f"Config file not found: {self.config_path}")
 
@@ -98,7 +105,18 @@ class Config:
 
     @property
     def outgoing_root(self) -> str:
+        """Raw template from config (may contain {user}/{module})."""
         return self._model.outgoing_root if self._model else "./a0.outgoing"
+
+    @property
+    def outgoing_root_resolved(self) -> str:
+        """Absolute path for outgoing_root, preserving {user}/{module} template."""
+        raw = self.outgoing_root
+        # Extract template suffix like {user}/{module}
+        path = Path(raw)
+        if path.is_absolute():
+            return raw
+        return str(self.resolve_path(raw))
 
     @property
     def repository_root(self) -> str:
@@ -135,19 +153,23 @@ class Config:
         tc = self.tag_config(tag)
         return tc.release_users if tc else []
 
-    # ---- helpers ----
+    # ---- helpers (relative paths resolve against config.yaml directory) ----
 
-    def resolve_outgoing_path(self) -> Path:
-        return Path(self.outgoing_root).resolve()
+    def resolve_path(self, rel_path: str) -> Path:
+        """Resolve a config-relative path to absolute. Supports {user} placeholders."""
+        p = Path(rel_path)
+        if p.is_absolute():
+            return p
+        return (Path(self._project_root) / p).resolve()
 
     def raw_dir(self) -> Path:
-        return Path(self.repository_root) / "raw"
+        return self.resolve_path(self.repository_root) / "raw"
 
     def ready_dir(self) -> Path:
-        return Path(self.repository_root) / "ready"
+        return self.resolve_path(self.repository_root) / "ready"
 
     def release_dir(self) -> Path:
-        return Path(self.repository_root) / "release"
+        return self.resolve_path(self.repository_root) / "release"
 
     @property
     def stale_lock_minutes(self) -> int:
@@ -187,14 +209,13 @@ class Config:
         return ""
 
     def db_path(self) -> str:
-        return str(Path(self.repository_root) / "ddm.db")
+        return str(self.resolve_path(self.repository_root) / "ddm.db")
 
     def log_path(self) -> str:
-        return str(Path(self.log_dir))
+        return str(self.resolve_path(self.log_dir))
 
     def release_lock_path(self, tag: str) -> Path:
-        """Per-tag release lock — different tags can release concurrently."""
         return self.ready_dir() / f".lock_release_{tag}"
 
     def module_lock_path(self, module: str, tag: str) -> Path:
-        return Path(self.repository_root) / "raw" / f".lock_{module}_{tag}"
+        return self.raw_dir() / f".lock_{module}_{tag}"

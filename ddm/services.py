@@ -393,7 +393,7 @@ def submit(
         storage.add_event(batch_uuid, EVENT_SUBMIT_START, f"module={module} tag={tag} user={username}")
 
         # ---- discover source files ----
-        source_files = find_source_files(config.outgoing_root, patterns, username, module)
+        source_files = find_source_files(config.outgoing_root_resolved, patterns, username, module)
         if not source_files:
             expanded = config.outgoing_root.format(user=username, module=module)
             msg = (f"在 {expanded} 中未找到匹配文件 "
@@ -955,8 +955,11 @@ def release(
             f"modules={sorted(set(b['module'] for b in batches))}"
         )
 
-        return ReleaseResult(True, f"Released {tag}/{version} ({total_files} files, {len(batches)} batches)",
-                            version, integrity_warnings=integrity_warnings)
+        release_path = str(release_version_dir.resolve())
+        return ReleaseResult(True,
+            f"Released {tag}/{version} ({total_files} files, {len(batches)} batches)\n"
+            f"  Path: {release_path}",
+            version, integrity_warnings=integrity_warnings)
 
     except KeyboardInterrupt:
         logger.warning(f"Release interrupted by user (Ctrl+C): {version}")
