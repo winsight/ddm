@@ -217,7 +217,7 @@ def _load_config_safe(ctx) -> "Config | None":
         ctx.ensure_object(dict)
     if "_config" not in ctx.obj:
         try:
-            config_path = ctx.obj.get("config_path", "config/config.yaml")
+            config_path = ctx.obj.get("config_path") or _default_config_path()
             ctx.obj["_config"] = Config(config_path)
         except Exception:
             ctx.obj["_config"] = None
