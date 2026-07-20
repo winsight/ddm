@@ -650,6 +650,7 @@ def release(
     progress=None,
     username: str = "",
     allow_inherit: bool = False,
+    force: bool = False,
 ) -> ReleaseResult:
     """Execute the release pipeline.
 
@@ -676,6 +677,10 @@ def release(
 
     release_version_dir = config.release_dir() / tag / version
     is_new_version = not release_version_dir.is_dir()
+    if not is_new_version and release_all and not force:
+        return ReleaseResult(False,
+            f"版本 {version} 已存在。全量发布 (-A) 覆盖已有版本属破坏性操作。\n"
+            f"  如需覆盖请使用 --force，或使用 -m MODULE 追加模块。")
     if is_new_version:
         logger.info(f"Creating new version: {version}")
     else:

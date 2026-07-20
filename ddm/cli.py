@@ -443,8 +443,9 @@ def _status(ctx, module, date_filter):
 @click.option("-m", "--module", default=None, help="Release specific module (auto-inherits others)")
 @click.option("-v", "--version", required=True, help="Version label (e.g. V1, V2)")
 @click.option("--inherit", is_flag=True, help="Allow -A to inherit unsubmitted modules from previous version")
+@click.option("--force", is_flag=True, help="Force -A to overwrite an existing version")
 @click.pass_context
-def _release(ctx, tag, release_all, module, version, inherit):
+def _release(ctx, tag, release_all, module, version, inherit, force):
     """Release submitted data to release/ directory.
 
     \b
@@ -476,6 +477,7 @@ def _release(ctx, tag, release_all, module, version, inherit):
         release_all=release_all,
         username=username,
         allow_inherit=inherit,
+        force=force,
     )
 
     if result.success:
