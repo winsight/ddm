@@ -674,11 +674,6 @@ def release(
             logger.warning(msg)
             return ReleaseResult(False, msg)
 
-    if not version:
-        version = time.strftime("%Y%m%d")
-    else:
-        version = f"{version}_{time.strftime('%Y%m%d')}"
-
     release_version_dir = config.release_dir() / tag / version
     is_new_version = not release_version_dir.is_dir()
     if is_new_version:
@@ -923,7 +918,7 @@ def release(
             shutil.rmtree(str(staging_dir), ignore_errors=True)
         # Ensure version dir and all subdirs are group-writable so
         # future owners can append modules to this version.
-        for root, dirs, _ in os.walk(str(release_version_dir)):
+        for root, _, _ in os.walk(str(release_version_dir)):
             os.chmod(root, SHARED_DIR_PERMS)
         action = f"Released to {version}"
 

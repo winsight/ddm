@@ -428,7 +428,7 @@ def _status(ctx, module, date_filter):
 @click.option("-t", "--tag", required=True, type=TAG_TYPE, help=f"Tag: {', '.join(sorted(VALID_TAGS))}")
 @click.option("-A", "--all", "release_all", is_flag=True, help="Release all configured modules for this tag")
 @click.option("-m", "--module", default=None, help="Release specific module (auto-inherits others)")
-@click.option("-v", "--version", default="", help="Version label (default: date stamp)")
+@click.option("-v", "--version", required=True, help="Version label (e.g. V1, V2)")
 @click.option("--inherit", is_flag=True, help="Allow -A to inherit unsubmitted modules from previous version")
 @click.pass_context
 def _release(ctx, tag, release_all, module, version, inherit):
