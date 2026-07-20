@@ -1,16 +1,13 @@
 #!/bin/csh -f
 #=========================================================================
-# DDM 项目更新脚本 (csh/tcsh)
+# DDM 项目更新脚本 (csh/tcsh) — 离线服务器版本
 #
 # 用法：
-#   方法1: scp 从远程服务器拉取
+#   方法1: 指定新包路径（本地或 NFS 路径）
+#     ddm_update.csh /path/to/ddm_v2.2.tar.gz
+#
+#   方法2: scp 从远程拉取
 #     ddm_update.csh user@server:/path/to/ddm_v2.2.tar.gz
-#
-#   方法2: 本地压缩包部署
-#     ddm_update.csh ./ddm_v2.2.tar.gz
-#
-#   方法3: FileCodeBox 提取码下载
-#     ddm_update.csh --code 57067
 #
 #   回退到上一个版本:
 #     ddm_update.csh --rollback
@@ -19,9 +16,10 @@
 #     ddm_update.csh --list
 #
 # 部署目录结构:
-#   ~/ddm                 → 软链接，指向生产版本 (所有用户 PYTHONPATH 指向这)
-#   ~/ddm_home/            备份工作区
-#     releases/v1/         各版本归档
+#   ~/ddm                 → 软链接，指向生产版本
+#   ~/ddm_home/           备份工作区
+#     releases/            各版本归档
+#     backups/             旧版本备份
 #     current_config.yaml  当前配置备份
 #=========================================================================
 
@@ -31,12 +29,10 @@ set DDM_HOME   = "$HOME/ddm_home"               # 工作区
 set RELEASES   = "$DDM_HOME/releases"           # 版本归档
 set BACKUP_DIR = "$DDM_HOME/backups"            # 旧版本备份
 set CONFIG_BAK = "$DDM_HOME/current_config.yaml" # 配置备份
-set FILEBOX    = "https://filebox.a.wssss.org.cn"
 
 # ---- 参数解析 ----
 set method    = ""
 set source    = ""
-set code      = ""
 set rollback  = 0
 set list_vers = 0
 set force     = 0
@@ -53,11 +49,6 @@ while ($#argv > 0)
             breaksw
         case --force:
             set force = 1
-            breaksw
-        case --code:
-            shift
-            set code = "$argv[1]"
-            set method = "filebox"
             breaksw
         case --help:
         case -h:
@@ -100,10 +91,9 @@ endif
 # ---- 回退 ----
 if ($rollback) then
     if (! -d "$RELEASES") then
-        echo "错误: 没有已安装的版本 (releases/ 目录不存在)"
+        echo "错误: 没有已安装的版本"
         exit 1
     endif
-    # 找出最近两个版本，回退到第二个（上一个）
     set versions = `ls -1dt "$RELEASES"/*/ | sed 's|.*/||;s|/$||'`
     if ($#versions < 2) then
         echo "错误: 只有一个版本，无法回退"
@@ -113,11 +103,9 @@ if ($rollback) then
     set prev = "$versions[2]"
     echo ""
     echo "回退到: $prev"
-    echo ""
     rm -f "$DDM_LINK"
     ln -sfn "$RELEASES/$prev" "$DDM_LINK"
     echo "完成。当前版本: $prev"
-    echo "  ddm check 验证:"
     python3 -m ddm check
     exit 0
 endif
@@ -127,10 +115,10 @@ set timestamp = `date +%Y%m%d_%H%M%S`
 set tar_file  = "/tmp/ddm_update_${timestamp}.tar.gz"
 set ver_dir   = ""
 
-# ---- Step 1: 获取压缩包 ----
 echo ""
 echo "=== DDM 更新 ==="
 
+# ---- Step 1: 获取压缩包 ----
 if ("$method" == "scp") then
     echo "  从 $source 拉取..."
     scp "$source" "$tar_file"
@@ -138,44 +126,17 @@ if ("$method" == "scp") then
         echo "错误: scp 失败"
         exit 1
     endif
-
 else if ("$method" == "local") then
     if (! -f "$source") then
         echo "错误: 文件不存在: $source"
         exit 1
     endif
     cp "$source" "$tar_file"
-
-else if ("$method" == "filebox") then
-    echo "  从 FileCodeBox 下载 (code=$code)..."
-    # FileCodeBox select API: get download URL
-    set info = `curl -sL "$FILEBOX/share/select/?code=$code" | \
-                python3 -c "
-import sys, gzip
-data = sys.stdin.buffer.read()
-if data[:2] == b'\x1f\x8b':
-    data = gzip.decompress(data)
-print(data.decode('utf-8', errors='ignore')[:2000])
-" 2>/dev/null`
-    # Fallback: try the direct tar response (FileCodeBox might return raw)
-    curl -sL "$FILEBOX/share/select/?code=$code" -o "$tar_file" 2>/dev/null
-    if ($status != 0 || ! -f "$tar_file") then
-        echo "错误: 下载失败"
-        exit 1
-    endif
-    # Check if it's HTML (error page)
-    set head = `head -c 100 "$tar_file"`
-    if ("$head" =~ *\<html* || "$head" =~ *Error*) then
-        echo "错误: 提取码无效或文件已过期"
-        rm -f "$tar_file"
-        exit 1
-    endif
-
 else
     goto usage
 endif
 
-# ---- Step 2: 检查压缩包完整性 ----
+# ---- Step 2: 检查压缩包 ----
 if (! -f "$tar_file") then
     echo "错误: 压缩包不存在"
     exit 1
@@ -188,7 +149,7 @@ if ($tar_size < 1024) then
     exit 1
 endif
 
-# 提取版本名（从压缩包顶层目录名推断）
+# 提取版本名
 set top_dir = `tar tzf "$tar_file" 2>/dev/null | head -1 | sed 's|/.*||'`
 if ("$top_dir" == "") then
     echo "错误: 无法读取压缩包内容"
@@ -196,7 +157,6 @@ if ("$top_dir" == "") then
     exit 1
 endif
 
-# 如果顶层目录名不包含日期，加上时间戳
 if ("$top_dir" =~ *_20*) then
     set ver_dir = "$top_dir"
 else
@@ -250,7 +210,7 @@ if (-f "$CONFIG_BAK") then
         cp "$CONFIG_BAK" "$deploy_dir/config/config.yaml"
         echo "  已恢复配置"
     else
-        echo "  保留压缩包中的 config.yaml (如需恢复旧配置: cp $CONFIG_BAK $deploy_dir/config/config.yaml)"
+        echo "  保留新包中的 config.yaml (旧配置: $CONFIG_BAK)"
     endif
 endif
 
@@ -274,8 +234,7 @@ if ($status == 0) then
     echo "✓ 验证通过"
 else
     echo ""
-    echo "✗ 验证失败！回退:"
-    echo "  ln -sfn $BACKUP_DIR/<旧版本> $DDM_LINK"
+    echo "✗ 验证失败！回退: ddm_update.csh --rollback"
 endif
 
 exit 0
@@ -283,20 +242,19 @@ exit 0
 # ---- 帮助 ----
 usage:
     echo ""
-    echo "DDM 项目更新脚本"
+    echo "DDM 项目更新脚本 (离线)"
     echo ""
     echo "用法:"
-    echo "  $0 user@server:/path/to/ddm.tar.gz    从远程服务器 SCP 拉取"
-    echo "  $0 ./ddm.tar.gz                       本地压缩包部署"
-    echo "  $0 --code EXTRACTION_CODE             从 FileCodeBox 下载"
-    echo "  $0 --rollback                         回退到上一个版本"
-    echo "  $0 --list                             列出已安装版本"
+    echo "  $0 /path/to/ddm.tar.gz                 本地或 NFS 路径"
+    echo "  $0 user@server:/path/to/ddm.tar.gz     从远程 SCP 拉取"
+    echo "  $0 --rollback                          回退到上一个版本"
+    echo "  $0 --list                              列出已安装版本"
     echo ""
     echo "选项:"
     echo "  --force    覆盖已存在的版本"
-    echo "  --help     显示此帮助"
     echo ""
     echo "示例:"
+    echo "  $0 /nfs/eda/packages/ddm_v2.2.tar.gz"
     echo "  $0 user@dev-server:/tmp/ddm_v2.2.tar.gz"
     echo "  $0 --rollback"
     echo ""

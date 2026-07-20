@@ -240,10 +240,13 @@ refresh_ddm_complete
 ## 7. 更新系统
 
 ```csh
-# 拉取最新版本
+# 本地或 NFS 路径
+ddm_update.csh /nfs/eda/packages/ddm_v2.2.tar.gz
+
+# SCP 从远程拉取
 ddm_update.csh user@dev-server:/tmp/ddm_v2.2.tar.gz
 
-# 或回退
+# 回退
 ddm_update.csh --rollback
 ```
 
