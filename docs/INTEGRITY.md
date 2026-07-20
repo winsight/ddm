@@ -17,7 +17,9 @@ raw/{TAG}/{MODULE}/                             ← 临时暂存 (写)
         ▼
 ready/{TAG}/{MODULE}/                           ← 就绪暂存 (临界区)
         │
-        ├─ post_check_1 (source vs ready)        size + BLAKE3 + mtime
+        ├─ post_check_1 (raw vs ready)            BLAKE3 only
+        │                                         raw hash 在 os.replace 前缓存
+        │                                         ready hash 移动后重算
         │                                         ← submit 流水线最后一步
         │
         │  release: copy2 (ready → staging)
@@ -36,9 +38,9 @@ release/{TAG}/@latest → VERSION/                ← 发布归档 (只读)
 
 检查矩阵:
                                      size    mtime    BLAKE3
-  pre_check       (a0 vs raw)         ✓       ✗        ✓
-  post_check_1    (a0 vs ready)       ✓       ✓        ✓
-  post_check_2a   (ready vs staging)  ✓       ✓        ✓
+  pre_check       (a0 → raw)           ✓       ✗        ✓
+  post_check_1    (raw → ready)        ✗       ✗        ✓     ← 链条验证
+  post_check_2a   (ready → staging)    ✓       ✓        ✓
   post_check_2b   (历史 RELEASED)     文件是否存在 + 跨版本 size diff
 ```
 
@@ -75,32 +77,33 @@ for src in source_files:
 
 ---
 
-### 2.2 post_check_1 — submit 收尾
+### 2.2 post_check_1 — raw → ready（链条验证）
 
 **时机：** gate 通过 → `os.replace` raw→ready → chmod 664 **之后**
 
-**比对：** `a0.outgoing` 源文件 vs `ready/` 就绪文件（已经过 raw 中转）
+**比对：** `raw/` 的 BLAKE3（在 `os.replace` **之前**缓存） vs `ready/` 的 BLAKE3（移动后重新计算）
 
-**校验项：**
-- size: 源 vs ready
-- BLAKE3: 逐块重新哈希 a0 源文件 vs ready 文件
-- mtime: 整数秒级比对（`int(src_stat.st_mtime) != int(dst_stat.st_mtime)`），仅 warning 不 hard fail
-
-**能发现的：** 这是**最关键的一道防线**
-- gate 执行过程中是否无意修改了文件（gate 不应改文件，但它是个 subprocess）
-- `os.replace` 原子 rename 是否完整（极罕见但检测到就是救命）
-- ready/ 文件是否被其他进程误修改
-
-**漏掉的：**
-- mtime 比对仅 warning（NFS 挂载时 mtime 精度可能不同，不阻塞）
+**不比对 a0 的原因：** pre_check 已证明 raw == a0。只需证明 ready == raw，传递性保证 ready == a0。消除了 a0 两次读取之间的 TOCTOU 窗口。
 
 ```python
-# services.py line ~465
-for src in source_files:
-    if not compare_metadata(src, str(ready_path)):
-        post_ok = False  # hard fail
-        break
+# 1. os.replace 前缓存 raw hash
+raw_hashes[src] = _blake3_hash(str(raw_path))
+
+# 2. 原子移动
+os.replace(str(raw_path), str(ready_path))
+
+# 3. 移动后计算 ready hash，比对缓存
+ready_hash = _blake3_hash(str(ready_path))
+if ready_hash != raw_hashes[src]:
+    post_ok = False  # raw→ready 数据损坏
 ```
+
+**能发现的：**
+- gate 执行过程中 raw/ 文件被修改（gate 不应改文件，但它是 subprocess）
+- `os.replace` 原子 rename 中静默数据损坏（极罕见）
+- raw/ 在 gate 执行期间被其他进程写入
+
+**size/mtime 不需要另行校验：** `os.replace` 是 rename，不涉及数据拷贝，size 不可能变；mtime 由 `streaming_copy` 保留，不受 `os.replace` 影响。
 
 ---
 

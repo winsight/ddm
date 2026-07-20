@@ -495,6 +495,12 @@ def submit(
         ready_tag_dir = config.ready_dir() / tag / module
         _ensure_dir(ready_tag_dir, Path(config.repository_root).resolve())
 
+        # Cache raw hashes before os.replace (raw files will be gone after move)
+        raw_hashes: dict = {}
+        for src in source_files:
+            raw_path = raw_run_dir / Path(src).name
+            raw_hashes[src] = _blake3_hash(str(raw_path))
+
         for src in source_files:
             src_path = Path(src)
             raw_path = raw_run_dir / src_path.name
@@ -505,14 +511,14 @@ def submit(
 
         storage.add_event(batch_uuid, EVENT_DELIVERED, f"Files moved to {ready_tag_dir}")
 
-        # ---- post_check (1st) ----
+        # ---- post_check (1st): raw → ready (chain of custody) ----
         post_ok = True
         for src in source_files:
-            src_path = Path(src)
-            ready_path = ready_tag_dir / src_path.name
-            if not compare_metadata(src, str(ready_path)):
+            ready_path = ready_tag_dir / Path(src).name
+            ready_hash = _blake3_hash(str(ready_path))
+            if ready_hash != raw_hashes[src]:
                 post_ok = False
-                logger.error(f"post_check FAILED: {src_path.name}")
+                logger.error(f"post_check FAILED: raw→ready BLAKE3 mismatch ({Path(src).name})")
                 break
 
         if post_ok:
@@ -547,7 +553,7 @@ def submit(
             storage.add_event(batch_uuid, EVENT_FAILED, "User interrupted (Ctrl+C)")
         return SubmitResult(batch_uuid, False,
             "提交被用户中断 (Ctrl+C)。锁文件已释放，可重新提交。\n"
-            "  如果提示锁文件存在，请用 ddm check 检查是否有残留锁。")
+            "  若新提交提示锁文件存在，请用联系专项负责人 ddm check 检查。")
     except Exception as exc:
         logger.exception(f"Submit failed: {exc}")
         if batch_uuid:
