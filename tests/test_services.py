@@ -315,14 +315,16 @@ class TestFileGroups:
         for f in out_dir.iterdir():
             shutil.copy2(str(f), str(ready_dir / f.name))
 
-        # Create SUBMITTED batch in storage
+        # Create SUBMITTED batch in storage with real BLAKE3 hashes
+        from ddm.services import _blake3_hash
         db_path = str(repo / "ddm.db")
         storage = Storage(db_path)
         batch_uuid = storage.create_batch("CPU", "PV_ITER", "testuser")
         for f in sorted(out_dir.iterdir()):
-            storage.add_file(batch_uuid, str(f), f.stat().st_size, "fakehash")
+            real_hash = _blake3_hash(str(ready_dir / f.name))
+            storage.add_file(batch_uuid, str(f), f.stat().st_size, real_hash)
             storage.update_file_raw(batch_uuid, str(f),
-                                    str(ready_dir / f.name), f.stat().st_size, "fakehash")
+                                    str(ready_dir / f.name), f.stat().st_size, real_hash)
             storage.update_file_ready(batch_uuid, str(f), str(ready_dir / f.name))
         storage.update_batch_status(batch_uuid, STATUS_SUBMITTED)
 

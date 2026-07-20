@@ -449,15 +449,18 @@ def submit(
 
         storage.add_event(batch_uuid, EVENT_COPY_DONE, f"{len(source_files)} files copied")
 
-        # ---- pre_check ----
+        # ---- pre_check: BLAKE3(a0) vs DB-stored hash from streaming_copy ----
         _step("Pre-check", f"Verifying {len(source_files)} files", advance=False)
         pre_ok = True
         for src in source_files:
             src_path = Path(src)
-            dest_path = raw_run_dir / src_path.name
-            if not compare_metadata(src, str(dest_path)):
+            src_hash = _blake3_hash(str(src_path))
+            # Fetch the hash stored by streaming_copy (avoid recomputing raw)
+            file_rec = storage.get_file_by_source(batch_uuid, src)
+            stored_hash = file_rec.get("blake3_hash", "") if file_rec else ""
+            if src_hash != stored_hash:
                 pre_ok = False
-                logger.error(f"pre_check FAILED: {src_path.name}")
+                logger.error(f"pre_check FAILED: {src_path.name} BLAKE3 mismatch")
                 break
 
         if pre_ok:
@@ -880,7 +883,7 @@ def release(
                         logger.info(msg)
                         storage.add_event(batch_uuid, "size_change", msg)
 
-        # Pass 3: post_check all batches (ready vs staging)
+        # Pass 3: post_check (DB-stored ready hash vs staging hash)
         all_ok = True
         for batch in batches:
             batch_uuid = batch["batch_uuid"]
@@ -889,12 +892,24 @@ def release(
             for f in files:
                 ready_path = f["ready_path"]
                 sp = staging_map.get((batch_uuid, ready_path), "")
-                if not compare_metadata(ready_path, sp, check_mtime=True):
+                if not sp or not os.path.exists(sp):
                     all_ok = False
+                    break
+                # Compare DB-stored BLAKE3 (from submit) vs staging hash
+                staging_hash = _blake3_hash(sp)
+                stored_hash = f.get("blake3_hash", "")
+                if staging_hash != stored_hash:
+                    all_ok = False
+                    logger.error(f"post_check FAILED: ready→staging BLAKE3 mismatch")
                     storage.add_event(batch_uuid, EVENT_POST_CHECK_FAIL, sp)
                     storage.update_batch_status(batch_uuid, STATUS_FAILED)
                     storage.add_event(batch_uuid, EVENT_FAILED, "Release post_check failed")
                     break
+                # Also verify mtime was preserved by copy2
+                ready_mtime = os.stat(ready_path).st_mtime if os.path.exists(ready_path) else 0
+                staging_mtime = os.stat(sp).st_mtime
+                if int(ready_mtime) != int(staging_mtime):
+                    logger.warning(f"mtime mismatch ready→staging: {Path(sp).name}")
 
         if not all_ok:
             shutil.rmtree(str(staging_dir), ignore_errors=True)

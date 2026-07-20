@@ -261,6 +261,15 @@ class Storage:
                 (STATUS_FAILED, batch_uuid, source_path),
             )
 
+    def get_file_by_source(self, batch_uuid: str, source_path: str) -> dict | None:
+        """Get a single file record by batch_uuid and source_path."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM files WHERE batch_uuid = ? AND source_path = ?",
+                (batch_uuid, source_path),
+            ).fetchone()
+        return self._row_to_dict(row) if row else None
+
     def get_files(self, batch_uuid: str) -> list[dict]:
         with self._connect() as conn:
             rows = conn.execute(
