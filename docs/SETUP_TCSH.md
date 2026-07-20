@@ -96,8 +96,8 @@ chmod -R 2775 /nfs/eda/shared/ddm/a0.outgoing/
 ```csh
 # ===== DDM 配置 =====
 setenv PYTHONPATH /nfs/eda/shared/ddm       # Python 找到 ddm 包
-alias ddm 'python3 -m ddm -c /nfs/eda/shared/ddm/config/config.yaml'   # 全局配置
-source /nfs/eda/shared/ddm/ddm.complete.csh                            # Tab 补全
+alias ddm 'python3 -m ddm'                  # 配置自动发现，无需指定路径
+source /nfs/eda/shared/ddm/ddm.complete.csh # Tab 补全
 ```
 
 ### 2.2 立即生效

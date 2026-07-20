@@ -271,12 +271,25 @@ class RoleBasedGroup(click.Group):
         return super().get_command(ctx, cmd_name)
 
 
+def _default_config_path() -> str:
+    """Auto-discover config.yaml relative to the ddm package installation."""
+    import ddm
+    pkg_dir = Path(ddm.__file__).resolve().parent  # ddm/
+    # Standard layout: <project_root>/ddm/__init__.py
+    #                 <project_root>/config/config.yaml
+    candidate = pkg_dir.parent / "config" / "config.yaml"
+    if candidate.exists():
+        return str(candidate)
+    # Fallback: cwd (for development)
+    return "config/config.yaml"
+
+
 @click.group(cls=RoleBasedGroup)
 @click.option(
     "-c", "--config",
-    default="config/config.yaml",
-    show_default=True,
-    help="Path to YAML config file",
+    default=_default_config_path(),
+    hidden=True,
+    help="Path to YAML config file (auto-discovered)",
 )
 @click.pass_context
 def main(ctx, config):
