@@ -20,7 +20,6 @@
 #  13. 极端: release 和 submit 同一 tag (互斥)
 #=========================================================================
 
-set -e
 cd "$(dirname "$0")/.."
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -54,7 +53,7 @@ assert_contains() {  # $1=output $2=pattern $3=test_desc $4=expected_desc
 }
 
 # ---- clean state ----
-cleanup() { rm -f repository/raw/.lock_* repository/ready/.lock_release_*; kill $SLEEP_PID 2>/dev/null; }
+cleanup() { rm -f repository/raw/.lock_* repository/ready/.lock_release_*; [ -n "$SLEEP_PID" ] && kill $SLEEP_PID 2>/dev/null || true; }
 trap cleanup EXIT
 cleanup
 
