@@ -192,8 +192,9 @@ class Config:
     def log_path(self) -> str:
         return str(Path(self.log_dir))
 
-    def global_lock_path(self) -> Path:
-        return self.ready_dir() / ".lock_global_release"
+    def release_lock_path(self, tag: str) -> Path:
+        """Per-tag release lock — different tags can release concurrently."""
+        return self.ready_dir() / f".lock_release_{tag}"
 
     def module_lock_path(self, module: str, tag: str) -> Path:
         return Path(self.repository_root) / "raw" / f".lock_{module}_{tag}"

@@ -149,7 +149,7 @@ def _acquire_lock(lock_path: Path, description: str,
                 pass  # can't determine, rely on age
 
             if pid_dead or (stale_seconds > 0 and age > stale_seconds):
-                reason = f"进程已退出 (user={old_user})" if pid_dead else \
+                reason = f"原进程已退出 (user={old_user})" if pid_dead else \
                          f"{age/60:.0f}min 前创建 (user={old_user})"
                 logger.warning(
                     f"⚠ 检测到过期锁 ({reason}): {lock_path}")
@@ -360,10 +360,11 @@ def submit(
         logger.warning(msg)
         return SubmitResult("", False, msg)
 
-    # ---- fast-fail: global lock ----
-    glock = config.global_lock_path()
-    if glock.exists():
-        msg = f"系统正在 Release，提交被阻断 (lock: {glock})"
+    # ---- fast-fail: tag release lock ----
+    rlock = config.release_lock_path(tag)
+    if rlock.exists():
+        msg = (f"[{tag}] 正在 Release，提交被阻断。"
+               f"请等待 {tag} 发布完成后再提交。")
         logger.warning(msg)
         return SubmitResult("", False, msg)
 
@@ -746,7 +747,7 @@ def release(
                 storage.add_event(batch_uuid, EVENT_FAILED, msg)
                 return ReleaseResult(False, msg)
 
-    glock = config.global_lock_path()
+    rlock = config.release_lock_path(tag)
 
     # ---- integrity check: audit previously RELEASED versions ----
     integrity_warnings: List[str] = []
@@ -775,9 +776,9 @@ def release(
             logger.warning(msg)
 
     try:
-        _acquire_lock(glock, "全局 Release 进行中")
-    except LockError:
-        return ReleaseResult(False, "全局 Release 锁已被持有，发布被阻断")
+        _acquire_lock(rlock, f"Tag [{tag}] Release 进行中")
+    except LockError as e:
+        return ReleaseResult(False, f"Tag [{tag}] 正在 Release，发布被阻断 ({e})")
 
     try:
         # ---- stage to temp directory (all-or-nothing) ----
@@ -947,4 +948,4 @@ def release(
         logger.exception(f"Release failed: {exc}")
         return ReleaseResult(False, str(exc), version)
     finally:
-        _release_lock(glock)
+        _release_lock(rlock)
