@@ -41,17 +41,17 @@ shared_group: wheel
 # ══════════════════════════════════════════════════════
 # 超过此时间的残留锁文件（如 kill -9 导致）会在下次 submit 时自动清除。
 # 设为 0 则禁用自动清理，始终需要手动删除。
-stale_lock_minutes: 10
+stale_lock_minutes: 14
 
 # a0.outgoing 源数据根目录，支持 {user} {module} 占位符
 # 每个工程师在自己的 a0.outgoing 下平铺文件（无 tag 子目录）
 outgoing_root: ./a0.outgoing/{user}/{module}
 
 # 运行时仓库根目录
-repository_root: ./repository
+repository_root: /home/w00949819/Documents/Claude/ddm_new/repository
 
 # 日志目录
-log_dir: ./logs
+log_dir: /home/w00949819/Documents/Claude/ddm_new/logs
 
 # 默认 tag 配置 —— 所有模块自动继承
 defaults:
@@ -61,7 +61,7 @@ defaults:
       modules: [CPU, DDR]
       file_patterns:
         - "{module}.v.gz"
-        - "{module}.hier.gds"
+        - "{module}.pi.hier.gds.gz"
         - "{module}.v.pg"
       gates:
         - name: verilog_syntax_check

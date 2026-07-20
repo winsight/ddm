@@ -5,7 +5,7 @@ import time
 
 def main():
     print("Running DRC (Design Rule Check)...")
-    time.sleep(400.0)  # simulate DRC run
+    time.sleep(2.0)  # simulate DRC run
     print("DRC check PASSED — no violations")
     sys.exit(0)
 
