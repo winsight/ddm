@@ -539,7 +539,7 @@ def submit(
                 f"summary={summary or '-'}"
             )
 
-            msg = f"Submitted: {len(source_files)} files -> {ready_tag_dir}"
+            msg = f"Submitted: {len(source_files)} files (total {total_size} bytes)"
             if stale_warning:
                 msg += f"\n{stale_warning}"
             return SubmitResult(batch_uuid, True, msg)
