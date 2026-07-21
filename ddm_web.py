@@ -21,9 +21,9 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-# ---------------------------------------------------------------------------
-# HTML template (single-page app, vanilla JS)
-# ---------------------------------------------------------------------------
+# ======================================================================
+# HTML + CSS + JS (single-page app, vanilla)
+# ======================================================================
 
 PAGE_HTML = r"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -35,49 +35,65 @@ PAGE_HTML = r"""<!DOCTYPE html>
 :root {
   --bg: #f5f5f7; --panel: #fff; --text: #18181b; --muted: #71717a;
   --line: #e4e4e7; --green: #16a34a; --red: #dc2626; --yellow: #ca8a04;
-  --cyan: #0891b2; --blue: #2563eb;
+  --cyan: #0891b2; --blue: #2563eb; --purple: #9333ea;
+  --badge-pending: #fef9c3; --badge-submitted: #cffafe;
+  --badge-released: #dcfce7; --badge-failed: #fee2e2;
+  --badge-pending-text: #a16207; --badge-submitted-text: #0e7490;
+  --badge-released-text: #15803d; --badge-failed-text: #b91c1c;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+body { font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
        background: var(--bg); color: var(--text); min-height: 100vh; }
 header { background: var(--panel); border-bottom: 1px solid var(--line);
-         padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }
+         padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
 header h1 { font-size: 18px; font-weight: 700; }
 header span { font-size: 12px; color: var(--muted); }
-main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-         gap: 12px; margin-bottom: 24px; }
-.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-        padding: 14px 16px; }
-.stat .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
-.stat .value { font-size: 28px; font-weight: 700; margin-top: 2px; }
+main { padding: 16px 24px; max-width: 1500px; margin: 0 auto; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+         gap: 10px; margin-bottom: 16px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+        padding: 10px 14px; cursor: pointer; transition: box-shadow .15s; }
+.stat:hover { box-shadow: 0 4px 12px rgba(0,0,0,.06); }
+.stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+.stat .value { font-size: 24px; font-weight: 700; margin-top: 2px; }
+.stat.active { border-color: var(--blue); background: #eff6ff; }
+
+.filter-bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+.filter-bar select, .filter-bar input { padding: 5px 10px; border: 1px solid var(--line);
+       border-radius: 6px; font: inherit; background: var(--panel); }
+.filter-bar select:focus, .filter-bar input:focus { outline: none; border-color: var(--blue); }
+.filter-bar label { font-size: 12px; color: var(--muted); font-weight: 600; margin-left: 2px; }
+.filter-bar .sep { width: 1px; background: var(--line); height: 24px; align-self: center; }
+.filter-bar .chip { padding: 4px 10px; border-radius: 99px; font-size: 11px; font-weight: 600;
+       cursor: pointer; border: 1px solid var(--line); background: var(--panel); }
+.filter-bar .chip.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+.filter-bar .btn { padding: 5px 14px; border-radius: 6px; font: inherit; font-size: 12px; font-weight: 600;
+       cursor: pointer; border: 1px solid var(--line); background: var(--panel); }
+.filter-bar .btn:hover { background: #f4f4f5; }
+
 .tabs { display: flex; gap: 0; margin-bottom: -1px; }
-.tab { padding: 8px 20px; border: 1px solid var(--line); border-bottom: none;
-       border-radius: 8px 8px 0 0; cursor: pointer; background: var(--bg);
-       font-size: 13px; font-weight: 600; color: var(--muted); }
+.tab { padding: 7px 18px; border: 1px solid var(--line); border-bottom: none;
+       border-radius: 7px 7px 0 0; cursor: pointer; background: var(--bg);
+       font-size: 12px; font-weight: 600; color: var(--muted); }
 .tab.active { background: var(--panel); color: var(--text); border-bottom: 1px solid var(--panel); }
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 0 10px 10px 10px;
-         padding: 16px; overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; padding: 8px 10px; border-bottom: 2px solid var(--line);
-     font-weight: 600; color: var(--muted); white-space: nowrap; }
-td { padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 0 8px 8px 8px;
+         padding: 14px; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { text-align: left; padding: 7px 8px; border-bottom: 2px solid var(--line);
+     font-weight: 600; color: var(--muted); white-space: nowrap; cursor: pointer; user-select: none; }
+th:hover { color: var(--text); }
+td { padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 tr:hover td { background: #fafafa; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 99px;
-         font-size: 11px; font-weight: 650; }
-.badge-PENDING { background: #fef9c3; color: var(--yellow); }
-.badge-SUBMITTED { background: #cffafe; color: var(--cyan); }
-.badge-RELEASED { background: #dcfce7; color: var(--green); }
-.badge-FAILED { background: #fee2e2; color: var(--red); }
-.hash { font-family: monospace; font-size: 11px; color: var(--muted); }
+.badge { display: inline-block; padding: 1px 7px; border-radius: 99px;
+         font-size: 10px; font-weight: 650; }
+.badge-PENDING { background: var(--badge-pending); color: var(--badge-pending-text); }
+.badge-SUBMITTED { background: var(--badge-submitted); color: var(--badge-submitted-text); }
+.badge-RELEASED { background: var(--badge-released); color: var(--badge-released-text); }
+.badge-FAILED { background: var(--badge-failed); color: var(--badge-failed-text); }
+.hash { font-family: monospace; font-size: 10px; color: var(--muted); }
 .empty { text-align: center; padding: 40px; color: var(--muted); }
-.filter { margin-bottom: 12px; display: flex; gap: 8px; align-items: center; }
-.filter select, .filter input { padding: 4px 10px; border: 1px solid var(--line);
-       border-radius: 6px; font: inherit; font-size: 13px; }
-.filter label { font-size: 12px; color: var(--muted); font-weight: 600; }
-.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--line);
-           border-top-color: var(--blue); border-radius: 50%; animation: spin .6s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.row-count { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.warn { color: var(--yellow); font-size: 11px; margin: 4px 0; }
 </style>
 </head>
 <body>
@@ -87,15 +103,25 @@ tr:hover td { background: #fafafa; }
 </header>
 <main>
   <div class="stats" id="stats"></div>
+
   <div class="tabs">
     <div class="tab active" data-tab="batches">Batches</div>
     <div class="tab" data-tab="files">Files</div>
     <div class="tab" data-tab="events">Events</div>
+    <div class="tab" data-tab="overview">Overview</div>
   </div>
-  <div class="panel" id="content"><div class="empty">Loading...</div></div>
+
+  <div class="panel">
+    <div class="filter-bar" id="filters"></div>
+    <div class="row-count" id="row-count"></div>
+    <div id="content"><div class="empty">Loading...</div></div>
+  </div>
 </main>
 <script>
 const API = '/api';
+let currentTab = 'batches';
+let filters = { tag: '', module: '', status: '', time: '', sort: '' };
+let allTags = [], allModules = [];
 
 async function fetchJSON(path) {
   const r = await fetch(API + path);
@@ -110,47 +136,97 @@ function badge(status) {
 function fmtTime(ts) {
   if (!ts) return '-';
   const d = new Date(ts * 1000);
-  return d.toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  return d.toLocaleString('sv-SE', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
 }
 
 function fmtSize(n) {
-  if (!n) return '-';
-  for (const u of ['B','KB','MB','GB']) { if (n < 1024) return n + ' ' + u; n = Math.round(n/1024); }
-  return n + ' TB';
+  if (!n || n === 0) return '-';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let s = n;
+  for (const u of units) { if (s < 1024) return u === 'B' ? s + ' B' : s.toFixed(1) + ' ' + u; s /= 1024; }
+  return s.toFixed(1) + ' TB';
 }
 
-function fmtHash(h) {
-  return h ? h.substring(0, 16) + '...' : '-';
+function fmtHash(h) { return h ? h.substring(0, 12) + '...' : '-'; }
+
+function buildQuery(filters) {
+  const parts = [];
+  for (const [k, v] of Object.entries(filters)) {
+    if (v) parts.push(k + '=' + encodeURIComponent(v));
+  }
+  return parts.length ? '?' + parts.join('&') : '';
 }
+
+function renderFilters() {
+  const bar = document.getElementById('filters');
+  let html = '<label>Tag</label><select id="f-tag" onchange="applyFilter(\'tag\',this.value)">';
+  html += '<option value="">All</option>';
+  for (const t of allTags) html += '<option value="'+t+'"'+(filters.tag===t?' selected':'')+'>'+t+'</option>';
+  html += '</select><span class="sep"></span>';
+  html += '<label>Module</label><select id="f-module" onchange="applyFilter(\'module\',this.value)">';
+  html += '<option value="">All</option>';
+  for (const m of allModules) html += '<option value="'+m+'"'+(filters.module===m?' selected':'')+'>'+m+'</option>';
+  html += '</select><span class="sep"></span>';
+  html += '<label>Status</label>';
+  for (const s of ['','PENDING','SUBMITTED','RELEASED','FAILED']) {
+    const label = s || 'All';
+    html += '<span class="chip'+(filters.status===s?' active':'')+'" onclick="applyFilter(\'status\',\''+s+'\')">'+label+'</span>';
+  }
+  html += '<span class="sep"></span>';
+  html += '<label>Time</label><select id="f-time" onchange="applyFilter(\'time\',this.value)">';
+  html += '<option value="">All time</option><option value="1h"'+(filters.time==='1h'?' selected':'')+'>Last hour</option>';
+  html += '<option value="24h"'+(filters.time==='24h'?' selected':'')+'>Last 24h</option>';
+  html += '<option value="7d"'+(filters.time==='7d'?' selected':'')+'>Last 7 days</option>';
+  html += '<option value="30d"'+(filters.time==='30d'?' selected':'')+'>Last 30 days</option>';
+  html += '</select>';
+  html += '<span class="sep"></span>';
+  html += '<button class="btn" onclick="clearFilters()">Clear</button>';
+  html += '<button class="btn" onclick="refreshTab()" title="Refresh">↻</button>';
+  bar.innerHTML = html;
+}
+
+function applyFilter(key, value) {
+  filters[key] = value;
+  renderFilters();
+  loadTab(currentTab);
+}
+
+function clearFilters() {
+  filters = { tag: '', module: '', status: '', time: '', sort: '' };
+  renderFilters();
+  loadTab(currentTab);
+}
+
+function refreshTab() { loadTab(currentTab); }
 
 // ---- Stats ----
 async function loadStats() {
-  const s = await fetchJSON('/stats');
+  const s = await fetchJSON('/stats'+buildQuery(filters));
   document.getElementById('stats').innerHTML = [
     { label: 'Batches', value: s.batch_count },
-    { label: 'Files', value: s.file_count },
-    { label: 'SUBMITTED', value: s.submitted || 0 },
-    { label: 'RELEASED', value: s.released || 0 },
-    { label: 'FAILED', value: s.failed || 0 },
-    { label: 'DB Size', value: s.db_size },
+    { label: 'SUBMITTED', value: s.submitted },
+    { label: 'RELEASED', value: s.released },
+    { label: 'FAILED', value: s.failed },
+    { label: 'Tags', value: s.tag_count },
+    { label: 'Modules', value: s.module_count },
   ].map(x => `<div class="stat"><div class="label">${x.label}</div><div class="value">${x.value}</div></div>`).join('');
 }
 
 // ---- Batches Table ----
 async function loadBatches() {
-  const data = await fetchJSON('/batches');
+  const data = await fetchJSON('/batches'+buildQuery(filters));
+  document.getElementById('row-count').textContent = data.length + ' batches';
   if (!data.length) {
-    document.getElementById('content').innerHTML = '<div class="empty">No batches yet</div>';
-    return;
+    document.getElementById('content').innerHTML = '<div class="empty">No batches found</div>'; return;
   }
   const rows = data.map(b => `<tr>
-    <td>${b.batch_uuid.substring(0, 8)}</td>
+    <td>${b.batch_uuid.substring(0,8)}</td>
     <td>${badge(b.status)}</td>
-    <td><b>${b.module}</b></td>
-    <td>${b.tag}</td>
-    <td>${b.username}</td>
-    <td>${b.version || '-'}</td>
-    <td>${b.summary || '-'}</td>
+    <td><b>${b.module||'-'}</b></td>
+    <td>${b.tag||'-'}</td>
+    <td>${b.username||'-'}</td>
+    <td>${b.version||'-'}</td>
+    <td>${(b.summary||'-').substring(0,40)}</td>
     <td>${fmtTime(b.created_at)}</td>
   </tr>`).join('');
   document.getElementById('content').innerHTML = `<table>
@@ -160,73 +236,114 @@ async function loadBatches() {
 
 // ---- Files Table ----
 async function loadFiles() {
-  const data = await fetchJSON('/files');
+  const data = await fetchJSON('/files'+buildQuery(filters));
+  document.getElementById('row-count').textContent = data.length + ' files';
   if (!data.length) {
-    document.getElementById('content').innerHTML = '<div class="empty">No files yet</div>';
-    return;
+    document.getElementById('content').innerHTML = '<div class="empty">No files found</div>'; return;
   }
-  const rows = data.map(f => `<tr>
-    <td>${f.batch_uuid.substring(0, 8)}</td>
-    <td>${badge(f.status)}</td>
-    <td>${Path(f.source_path).name}</td>
-    <td class="hash" title="${f.blake3_hash || ''}">${fmtHash(f.blake3_hash)}</td>
-    <td>${fmtSize(f.file_size)}</td>
-    <td>${fmtTime(f.created_at)}</td>
-  </tr>`).join('');
+  const rows = data.map(f => {
+    const fname = (f.source_path||'').split('/').pop() || '-';
+    return `<tr>
+      <td>${f.batch_uuid.substring(0,8)}</td>
+      <td>${badge(f.status)}</td>
+      <td><b>${fname}</b></td>
+      <td class="hash" title="${f.blake3_hash||''}">${fmtHash(f.blake3_hash)}</td>
+      <td>${fmtSize(f.file_size)}</td>
+      <td>${fmtSize(f.source_size)}</td>
+      <td>${fmtTime(f.created_at)}</td>
+    </tr>`;
+  }).join('');
   document.getElementById('content').innerHTML = `<table>
-    <thead><tr><th>Batch</th><th>Status</th><th>File</th><th>BLAKE3</th><th>Size</th><th>Time</th></tr></thead>
+    <thead><tr><th>Batch</th><th>Status</th><th>File</th><th>BLAKE3</th><th>Size</th><th>Source</th><th>Time</th></tr></thead>
     <tbody>${rows}</tbody></table>`;
 }
-
-function Path(p) { return { name: (p || '').split('/').pop() || p }; }
 
 // ---- Events Table ----
 async function loadEvents() {
-  const data = await fetchJSON('/events');
+  const data = await fetchJSON('/events'+buildQuery(filters));
+  document.getElementById('row-count').textContent = data.length + ' events';
   if (!data.length) {
-    document.getElementById('content').innerHTML = '<div class="empty">No events yet</div>';
-    return;
+    document.getElementById('content').innerHTML = '<div class="empty">No events found</div>'; return;
   }
   const rows = data.map(e => `<tr>
-    <td>${e.batch_uuid.substring(0, 8)}</td>
+    <td>${e.batch_uuid.substring(0,8)}</td>
     <td><b>${e.event_type}</b></td>
-    <td>${e.message || '-'}</td>
+    <td>${e.message||'-'}</td>
     <td>${fmtTime(e.created_at)}</td>
   </tr>`).join('');
   document.getElementById('content').innerHTML = `<table>
-    <thead><tr><th>Batch</th><th>Event</th><th>Message</th><th>Time</th></tr></thead>
+    <thead><tr><th>Batch</th><th>Event</th><th>Detail</th><th>Time</th></tr></thead>
     <tbody>${rows}</tbody></table>`;
 }
 
-// ---- Tab switching ----
-const loaders = { batches: loadBatches, files: loadFiles, events: loadEvents };
+// ---- Overview (tag × module matrix) ----
+async function loadOverview() {
+  const data = await fetchJSON('/overview'+buildQuery(filters));
+  if (!data.tags || !data.tags.length) {
+    document.getElementById('row-count').textContent = '';
+    document.getElementById('content').innerHTML = '<div class="empty">No data yet</div>'; return;
+  }
+  document.getElementById('row-count').textContent = data.modules.length + ' modules × ' + data.tags.length + ' tags';
+  // Build matrix: rows=modules, cols=tags
+  const ths = '<th>Module</th>' + data.tags.map(t => '<th>'+t+'</th>').join('');
+  const trs = data.modules.map(mod => {
+    const tds = data.tags.map(tag => {
+      const cell = data.matrix[mod]?.[tag];
+      if (!cell) return '<td style="color:var(--muted)">-</td>';
+      let cls = '';
+      if (cell.status === 'RELEASED') cls = 'color:var(--green);font-weight:650';
+      else if (cell.status === 'SUBMITTED') cls = 'color:var(--cyan);font-weight:650';
+      else if (cell.status === 'FAILED') cls = 'color:var(--red)';
+      const ver = cell.version ? ' v'+cell.version : '';
+      return '<td style="'+cls+'">'+cell.status+ver+'</td>';
+    }).join('');
+    return '<tr><td><b>'+mod+'</b></td>'+tds+'</tr>';
+  }).join('');
+  document.getElementById('content').innerHTML = `<table>
+    <thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+}
+
+const loaders = { batches: loadBatches, files: loadFiles, events: loadEvents, overview: loadOverview };
+const overviewTab = { batches: false, files: false, events: false, overview: true };
+
+function loadTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.querySelector('.tab[data-tab="'+tab+'"]').classList.add('active');
+  loaders[tab]();
+  // Show/hide filter bar for overview
+  document.getElementById('filters').style.display = overviewTab[tab] ? 'none' : '';
+}
+
 document.querySelectorAll('.tab').forEach(t => {
-  t.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-    t.classList.add('active');
-    loaders[t.dataset.tab]();
-  });
+  t.addEventListener('click', () => loadTab(t.dataset.tab));
 });
 
-// ---- Init ----
 (async () => {
   document.getElementById('db-path').textContent = location.host;
-  await loadStats();
+  // Load filter options
+  try {
+    const s = await fetchJSON('/stats');
+    allTags = s.all_tags || [];
+    allModules = s.all_modules || [];
+  } catch(e) { console.error(e); }
+  renderFilters();
+  loadStats();
   loadBatches();
 })();
 </script>
 </body>
 </html>"""
 
-# ---------------------------------------------------------------------------
+# ======================================================================
 # API handler
-# ---------------------------------------------------------------------------
+# ======================================================================
 
 class APIHandler(BaseHTTPRequestHandler):
     db_path: str = "repository/ddm.db"
 
     def log_message(self, format, *args):
-        pass  # suppress access log
+        pass
 
     def _json(self, data, status=200):
         body = json.dumps(data, ensure_ascii=False).encode()
@@ -237,7 +354,6 @@ class APIHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _query(self, sql: str, params=()):
-        """Run SELECT and return list of dicts."""
         db = sqlite3.connect(self.db_path)
         db.row_factory = sqlite3.Row
         try:
@@ -246,11 +362,50 @@ class APIHandler(BaseHTTPRequestHandler):
         finally:
             db.close()
 
+    def _parse_filters(self, parsed) -> dict:
+        """Parse filter params from query string."""
+        qs = parse_qs(parsed.query)
+        f = {}
+        for key in ("tag", "module", "status", "time", "sort"):
+            val = qs.get(key, [""])[0]
+            if val:
+                f[key] = val
+        return f
+
+    def _build_where(self, filters: dict, table_alias: str = "") -> tuple:
+        """Build WHERE clause from filters. Returns (clause, params)."""
+        prefix = table_alias + "." if table_alias else ""
+        clauses = []
+        params = []
+        if filters.get("tag"):
+            clauses.append(prefix + "tag = ?")
+            params.append(filters["tag"])
+        if filters.get("module"):
+            clauses.append(prefix + "module = ?")
+            params.append(filters["module"])
+        if filters.get("status"):
+            clauses.append(prefix + "status = ?")
+            params.append(filters["status"])
+        if filters.get("time"):
+            val = filters["time"]
+            unit = val[-1]
+            amount = int(val[:-1])
+            if unit == "h":
+                secs = amount * 3600
+            elif unit == "d":
+                secs = amount * 86400
+            else:
+                secs = 0
+            if secs > 0:
+                clauses.append(prefix + "created_at > ?")
+                params.append(time.time() - secs)
+        where = " AND ".join(clauses) if clauses else "1=1"
+        return where, params
+
     def do_GET(self):
         parsed = urlparse(self.path)
 
-        # Serve the main page
-        if parsed.path == "/" or parsed.path == "/index.html":
+        if parsed.path in ("/", "/index.html"):
             body = PAGE_HTML.encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -259,53 +414,84 @@ class APIHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
 
-        # JSON API endpoints
         try:
             if parsed.path == "/api/stats":
                 db = sqlite3.connect(self.db_path)
                 try:
-                    batch_count = db.execute("SELECT COUNT(*) FROM batches").fetchone()[0]
-                    file_count = db.execute("SELECT COUNT(*) FROM files").fetchone()[0]
-                    submitted = db.execute(
-                        "SELECT COUNT(*) FROM batches WHERE status='SUBMITTED'").fetchone()[0]
-                    released = db.execute(
-                        "SELECT COUNT(*) FROM batches WHERE status='RELEASED'").fetchone()[0]
-                    failed = db.execute(
-                        "SELECT COUNT(*) FROM batches WHERE status='FAILED'").fetchone()[0]
+                    filters = self._parse_filters(parsed)
+                    wb, pb = self._build_where(filters)
+                    batch_count = db.execute(f"SELECT COUNT(*) FROM batches WHERE {wb}", pb).fetchone()[0]
+                    file_count = db.execute(f"SELECT COUNT(*) FROM files WHERE {wb}", pb).fetchone()[0]
+                    submitted = db.execute(f"SELECT COUNT(*) FROM batches WHERE {wb} AND status='SUBMITTED'", pb).fetchone()[0]
+                    released = db.execute(f"SELECT COUNT(*) FROM batches WHERE {wb} AND status='RELEASED'", pb).fetchone()[0]
+                    failed = db.execute(f"SELECT COUNT(*) FROM batches WHERE {wb} AND status='FAILED'", pb).fetchone()[0]
+                    all_tags = [r[0] for r in db.execute("SELECT DISTINCT tag FROM batches ORDER BY tag").fetchall()]
+                    all_modules = [r[0] for r in db.execute("SELECT DISTINCT module FROM batches ORDER BY module").fetchall()]
                 finally:
                     db.close()
-                db_size = os.path.getsize(self.db_path) if os.path.exists(self.db_path) else 0
-                for unit in ("B", "KB", "MB"):
-                    if db_size < 1024:
-                        break
-                    db_size //= 1024
                 self._json({
                     "batch_count": batch_count,
                     "file_count": file_count,
                     "submitted": submitted,
                     "released": released,
                     "failed": failed,
-                    "db_size": f"{db_size} {unit}",
+                    "tag_count": len(all_tags),
+                    "module_count": len(all_modules),
+                    "all_tags": all_tags,
+                    "all_modules": all_modules,
                 })
 
             elif parsed.path == "/api/batches":
+                filters = self._parse_filters(parsed)
+                where, params = self._build_where(filters)
                 rows = self._query(
-                    "SELECT * FROM batches ORDER BY created_at DESC LIMIT 200")
+                    f"SELECT * FROM batches WHERE {where} ORDER BY created_at DESC LIMIT 500", params)
                 self._json(rows)
 
             elif parsed.path == "/api/files":
-                rows = self._query("""
-                    SELECT f.*, b.status FROM files f
+                filters = self._parse_filters(parsed)
+                where, params = self._build_where(filters, "f")
+                rows = self._query(f"""
+                    SELECT f.*, b.status, b.tag, b.module FROM files f
                     JOIN batches b ON f.batch_uuid = b.batch_uuid
-                    ORDER BY f.created_at DESC LIMIT 500
-                """)
+                    WHERE {where} ORDER BY f.created_at DESC LIMIT 500
+                """, params)
                 self._json(rows)
 
             elif parsed.path == "/api/events":
-                rows = self._query("""
-                    SELECT * FROM events ORDER BY created_at DESC LIMIT 500
-                """)
+                filters = self._parse_filters(parsed)
+                where, params = self._build_where(filters, "e")
+                rows = self._query(f"""
+                    SELECT e.*, b.tag, b.module FROM events e
+                    JOIN batches b ON e.batch_uuid = b.batch_uuid
+                    WHERE {where} ORDER BY e.created_at DESC LIMIT 500
+                """, params)
                 self._json(rows)
+
+            elif parsed.path == "/api/overview":
+                filters = self._parse_filters(parsed)
+                # Get all tags and modules
+                tags_list = [r["tag"] for r in self._query("SELECT DISTINCT tag FROM batches ORDER BY tag") if r.get("tag")]
+                modules_list = [r["module"] for r in self._query("SELECT DISTINCT module FROM batches ORDER BY module") if r.get("module")]
+
+                # Get latest batch per (module, tag)
+                all_rows = self._query("""
+                    SELECT module, tag, status, version FROM batches
+                    WHERE (module, tag, created_at) IN (
+                        SELECT module, tag, MAX(created_at)
+                        FROM batches GROUP BY module, tag
+                    )
+                """)
+
+                matrix = {}
+                for r in all_rows:
+                    mod = r["module"]
+                    tg = r["tag"]
+                    if mod not in matrix:
+                        matrix[mod] = {}
+                    matrix[mod][tg] = {"status": r["status"], "version": r["version"]}
+
+                self._json({"tags": tags_list, "modules": modules_list, "matrix": matrix})
 
             else:
                 self._json({"error": "not found"}, 404)
@@ -318,20 +504,14 @@ def main():
     parser = argparse.ArgumentParser(description="DDM Database Viewer")
     parser.add_argument("--port", type=int, default=8080, help="HTTP port (default: 8080)")
     parser.add_argument("--db", default="repository/ddm.db", help="Path to ddm.db")
-    parser.add_argument("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
+    parser.add_argument("--host", default="0.0.0.0", help="Bind address")
     args = parser.parse_args()
 
-    db_path = Path(args.db)
-    if not db_path.exists():
-        print(f"[WARN] Database not found: {db_path} (will show empty data)")
-
-    APIHandler.db_path = str(db_path.resolve())
-
+    APIHandler.db_path = str(Path(args.db).resolve())
     server = HTTPServer((args.host, args.port), APIHandler)
     print(f"  DDM Database Viewer")
     print(f"  http://{args.host}:{args.port}")
-    print(f"  DB:   {APIHandler.db_path}")
-    print(f"  Ctrl+C to stop")
+    print(f"  DB: {APIHandler.db_path}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
