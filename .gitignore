@@ -34,3 +34,6 @@ Thumbs.db
 .env
 .venv/
 venv/
+
+# Local auth config (contains credentials, do NOT commit)
+.claude/mail_config

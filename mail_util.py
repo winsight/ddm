@@ -24,7 +24,20 @@ SMTP_PORT = 587
 IMAP_HOST = "imap.qq.com"
 IMAP_PORT = 993
 SENDER = "wssssorg@qq.com"
-AUTH_CODE = "yxhtqpbfkpxdbgcj"
+
+# Auth code stored outside version control
+import os as _os
+_AUTH_FILE = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                           ".claude", "mail_config")
+try:
+    with open(_AUTH_FILE) as _f:
+        AUTH_CODE = _f.read().strip()
+except FileNotFoundError:
+    AUTH_CODE = _os.environ.get("DDM_MAIL_AUTH", "")
+    if not AUTH_CODE:
+        raise RuntimeError(
+            f"Mail auth not found. Create {_AUTH_FILE} with the auth code, "
+            f"or set DDM_MAIL_AUTH environment variable.")
 
 
 def send_email(to: str, subject: str, body: str) -> bool:
