@@ -28,7 +28,7 @@ SENDER = "wssssorg@qq.com"
 # Auth code stored outside version control
 import os as _os
 _AUTH_FILE = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
-                           ".claude", "mail_config")
+                           "..", "mail_config")
 try:
     with open(_AUTH_FILE) as _f:
         AUTH_CODE = _f.read().strip()
