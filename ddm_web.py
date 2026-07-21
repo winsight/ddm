@@ -234,24 +234,37 @@ async function loadBatches() {
     <tbody>${rows}</tbody></table>`;
 }
 
-// ---- Files Table ----
+// ---- Files Table (grouped by batch with visual separation) ----
 async function loadFiles() {
   const data = await fetchJSON('/files'+buildQuery(filters));
   document.getElementById('row-count').textContent = data.length + ' files';
   if (!data.length) {
     document.getElementById('content').innerHTML = '<div class="empty">No files found</div>'; return;
   }
-  const rows = data.map(f => {
-    const fname = (f.source_path||'').split('/').pop() || '-';
-    return `<tr>
-      <td>${f.batch_uuid.substring(0,8)}</td>
-      <td>${badge(f.status)}</td>
-      <td><b>${fname}</b></td>
-      <td class="hash" title="${f.blake3_hash||''}">${fmtHash(f.blake3_hash)}</td>
-      <td>${fmtSize(f.file_size)}</td>
-      <td>${fmtSize(f.source_size)}</td>
-      <td>${fmtTime(f.created_at)}</td>
-    </tr>`;
+  // Group by batch_uuid
+  const groups = [];
+  let last = '';
+  for (const f of data) {
+    if (f.batch_uuid !== last) { groups.push([]); last = f.batch_uuid; }
+    groups[groups.length-1].push(f);
+  }
+  const colors = ['rgba(59,130,246,0.04)', 'rgba(139,92,246,0.04)', 'rgba(16,185,129,0.04)', 'rgba(245,158,11,0.04)'];
+  const rows = groups.map((g, gi) => {
+    const bg = colors[gi % colors.length];
+    return g.map((f, fi) => {
+      const fname = (f.source_path||'').split('/').pop() || '-';
+      const topBorder = fi === 0 ? 'border-top: 2px solid var(--line);' : '';
+      const groupBg = fi === 0 ? `background:${bg};` : `background:${bg};`;
+      return `<tr style="${groupBg}${topBorder}">
+        <td>${fi === 0 ? '<b>'+f.batch_uuid.substring(0,8)+'</b>' : ''}</td>
+        <td>${badge(f.status)}</td>
+        <td><b>${fname}</b></td>
+        <td class="hash" title="${f.blake3_hash||''}">${fmtHash(f.blake3_hash)}</td>
+        <td>${fmtSize(f.file_size)}</td>
+        <td>${fmtSize(f.source_size)}</td>
+        <td>${fmtTime(f.created_at)}</td>
+      </tr>`;
+    }).join('');
   }).join('');
   document.getElementById('content').innerHTML = `<table>
     <thead><tr><th>Batch</th><th>Status</th><th>File</th><th>BLAKE3</th><th>Size</th><th>Source</th><th>Time</th></tr></thead>
