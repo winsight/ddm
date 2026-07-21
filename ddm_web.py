@@ -219,16 +219,31 @@ async function loadBatches() {
   if (!data.length) {
     document.getElementById('content').innerHTML = '<div class="empty">No batches found</div>'; return;
   }
-  const rows = data.map(b => `<tr>
-    <td>${b.batch_uuid.substring(0,8)}</td>
-    <td>${badge(b.status)}</td>
-    <td><b>${b.module||'-'}</b></td>
-    <td>${b.tag||'-'}</td>
-    <td>${b.username||'-'}</td>
-    <td>${b.version||'-'}</td>
-    <td>${(b.summary||'-').substring(0,40)}</td>
-    <td>${fmtTime(b.created_at)}</td>
-  </tr>`).join('');
+  // Group by module+tag
+  const groups = [];
+  let last = '';
+  for (const b of data) {
+    const key = (b.module||'') + '/' + (b.tag||'');
+    if (key !== last) { groups.push([]); last = key; }
+    groups[groups.length-1].push(b);
+  }
+  const colors = ['rgba(59,130,246,0.04)', 'rgba(139,92,246,0.04)', 'rgba(16,185,129,0.04)', 'rgba(245,158,11,0.04)'];
+  const rows = groups.map((g, gi) => {
+    const bg = colors[gi % colors.length];
+    return g.map((b, fi) => {
+      const topBorder = fi === 0 ? 'border-top: 2px solid var(--line);' : '';
+      return `<tr style="background:${bg};${topBorder}">
+        <td>${b.batch_uuid.substring(0,8)}</td>
+        <td>${badge(b.status)}</td>
+        <td><b>${b.module||'-'}</b></td>
+        <td>${b.tag||'-'}</td>
+        <td>${b.username||'-'}</td>
+        <td>${b.version||'-'}</td>
+        <td>${(b.summary||'-').substring(0,40)}</td>
+        <td>${fmtTime(b.created_at)}</td>
+      </tr>`;
+    }).join('');
+  }).join('');
   document.getElementById('content').innerHTML = `<table>
     <thead><tr><th>UUID</th><th>Status</th><th>Module</th><th>Tag</th><th>User</th><th>Version</th><th>Summary</th><th>Time</th></tr></thead>
     <tbody>${rows}</tbody></table>`;
@@ -278,12 +293,25 @@ async function loadEvents() {
   if (!data.length) {
     document.getElementById('content').innerHTML = '<div class="empty">No events found</div>'; return;
   }
-  const rows = data.map(e => `<tr>
-    <td>${e.batch_uuid.substring(0,8)}</td>
-    <td><b>${e.event_type}</b></td>
-    <td>${e.message||'-'}</td>
-    <td>${fmtTime(e.created_at)}</td>
-  </tr>`).join('');
+  const groups = [];
+  let last = '';
+  for (const e of data) {
+    if (e.batch_uuid !== last) { groups.push([]); last = e.batch_uuid; }
+    groups[groups.length-1].push(e);
+  }
+  const colors = ['rgba(59,130,246,0.04)', 'rgba(139,92,246,0.04)', 'rgba(16,185,129,0.04)', 'rgba(245,158,11,0.04)'];
+  const rows = groups.map((g, gi) => {
+    const bg = colors[gi % colors.length];
+    return g.map((e, fi) => {
+      const topBorder = fi === 0 ? 'border-top: 2px solid var(--line);' : '';
+      return `<tr style="background:${bg};${topBorder}">
+        <td>${fi === 0 ? '<b>'+e.batch_uuid.substring(0,8)+'</b>' : ''}</td>
+        <td><b>${e.event_type}</b></td>
+        <td>${e.message||'-'}</td>
+        <td>${fmtTime(e.created_at)}</td>
+      </tr>`;
+    }).join('');
+  }).join('');
   document.getElementById('content').innerHTML = `<table>
     <thead><tr><th>Batch</th><th>Event</th><th>Detail</th><th>Time</th></tr></thead>
     <tbody>${rows}</tbody></table>`;
@@ -463,7 +491,7 @@ class APIHandler(BaseHTTPRequestHandler):
 
             elif parsed.path == "/api/files":
                 filters = self._parse_filters(parsed)
-                where, params = self._build_where(filters, "f")
+                where, params = self._build_where(filters, "b")
                 rows = self._query(f"""
                     SELECT f.*, b.status, b.tag, b.module FROM files f
                     JOIN batches b ON f.batch_uuid = b.batch_uuid
@@ -473,7 +501,7 @@ class APIHandler(BaseHTTPRequestHandler):
 
             elif parsed.path == "/api/events":
                 filters = self._parse_filters(parsed)
-                where, params = self._build_where(filters, "e")
+                where, params = self._build_where(filters, "b")
                 rows = self._query(f"""
                     SELECT e.*, b.tag, b.module FROM events e
                     JOIN batches b ON e.batch_uuid = b.batch_uuid
