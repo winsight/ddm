@@ -14,40 +14,36 @@
 
 ## 1. 快速开始
 
-### 启用 csh/tcsh Tab 补全
+### 配置（一次操作）
+
+在 `~/.tcshrc` 添加：
 
 ```csh
-# 写入 ~/.cshrc（下次登录自动生效）
-alias ddm "python3 -m ddm"
-source ~/ddm/ddm.complete.csh
-
-# 当前终端立即生效
-alias ddm "python3 -m ddm"
-source ~/ddm/ddm.complete.csh
+# ===== DDM =====
+source /nfs/eda/shared/ddm_venv/bin/activate.csh
+alias ddm 'python3 -m ddm'
+source /nfs/eda/shared/ddm/ddm.complete.csh
 ```
 
-补全效果：
-- `ddm <TAB>` → 列出 submit / status / release / list / check / version
-- `ddm submit -t <TAB>` → 列出所有配置的 tag（实时读取 config.yaml）
-- `ddm submit -m <TAB>` → 提示输入模块名
-- `ddm release -t <TAB>` → 同上
+立即生效：
 
-> 已按上述方式配置后，下面所有 `python3 -m ddm` 命令都可以直接用 `ddm` 替代。
+```csh
+source ~/.tcshrc
+```
 
 ### 环境检查
 
-```bash
-cd /path/to/ddm_new
-python3 -m ddm check
+```csh
+ddm check
 ```
 
-输出示例：
-```
-DDM Environment Check
+Tab 补全：
 
-  ✓ Config loaded: config/config.yaml
-    Tags: PV_ITER, LVS_PASS, BASE_CLEAN, PV_FINAL, PI_ITER, PI_FINAL
-  ✓ BLAKE3 available
+```csh
+ddm <TAB>        → submit status release list check version
+ddm submit -t<TAB> → PV_ITER LVS_PASS ...
+ddm submit -m<TAB> → CPU DDR
+```
   ✓ SQLite ready: repository/ddm.db
   ✓ Outgoing root: ./a0.outgoing/{user}/{module}
   ✓ psutil available
