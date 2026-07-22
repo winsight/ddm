@@ -68,9 +68,9 @@ while ($#argv > 0)
     shift
 end
 
-# 根据 INSTALL_DIR 推导路径
+# 管理数据统一放在 ~/.ddm/ 下，--dir 只控制软链接位置
 set DDM_LINK   = "$INSTALL_DIR"
-set DDM_HOME   = "${INSTALL_DIR}_home"
+set DDM_HOME   = "$HOME/.ddm"
 set RELEASES   = "$DDM_HOME/releases"           # 版本归档
 set BACKUP_DIR = "$DDM_HOME/backups"            # 旧版本备份
 set CONFIG_BAK = "$DDM_HOME/current_config.yaml" # 配置备份
