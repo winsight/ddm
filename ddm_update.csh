@@ -67,8 +67,14 @@ while ($#argv > 0)
 end
 
 # 管理数据放在 install_dir 同级 .ddm/ 下
+# 如果 dirname 是 / (root)，改用 /tmp/.ddm/
 set DDM_LINK   = "$INSTALL_DIR"
-set DDM_MGMT   = `dirname "$INSTALL_DIR"`/.ddm
+set _parent = `dirname "$INSTALL_DIR"`
+if ("$_parent" == "/") then
+    set DDM_MGMT = "/tmp/.ddm"
+else
+    set DDM_MGMT = "$_parent/.ddm"
+endif
 set RELEASES   = "$DDM_MGMT/releases"           # 版本归档
 set BACKUP_DIR = "$DDM_MGMT/backups"            # 旧版本备份
 set CONFIG_BAK = "$DDM_MGMT/current_config.yaml" # 配置备份
