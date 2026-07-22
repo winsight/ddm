@@ -109,16 +109,14 @@ echo "--- Step 3: 安装 DDM ---"
 pip install -e "$DDM_ROOT" 2>&1 | tail -3
 echo "  ddm 已安装到 venv"
 
-# ---- Step 4: fix permissions ----
+# ---- Step 4: fix permissions (directories only, not files) ----
 echo ""
 echo "--- Step 4: 权限 ---"
-# Read shared_group from config, default to wheel
 SHARED_GRP=$(python3 -c "import yaml; c=yaml.safe_load(open('config/config.yaml')); print(c.get('shared_group','wheel'))" 2>/dev/null || echo "wheel")
 echo "  共享组: $SHARED_GRP"
 
-chmod -R g+rX,o+rX "$DDM_ROOT"
-chmod -R g+w "$DDM_ROOT/repository" "$DDM_ROOT/logs" "$DDM_ROOT/a0.outgoing" 2>/dev/null || true
-# chgrp + SGID on runtime dirs so new files inherit the shared group
+# Only set SGID on directories — file permissions are handled by DDM code.
+# Don't chmod -R existing files (they may belong to other users).
 for d in repository repository/raw repository/ready repository/release logs a0.outgoing; do
     mkdir -p "$DDM_ROOT/$d"
     chgrp "$SHARED_GRP" "$DDM_ROOT/$d" 2>/dev/null || true
