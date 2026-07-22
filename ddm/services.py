@@ -90,7 +90,10 @@ def _ensure_dir(path: Path, repo_root: Path = Path(".")):
     current = path.resolve()
     bound = repo_root.resolve()
     while current != current.parent and str(current).startswith(str(bound)):
-        os.chmod(str(current), SHARED_DIR_PERMS)
+        try:
+            os.chmod(str(current), SHARED_DIR_PERMS)
+        except (PermissionError, OSError):
+            pass  # not the owner, directory already exists with correct perms
         current = current.parent
 
 
