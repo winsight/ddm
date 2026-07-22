@@ -208,6 +208,10 @@ source /nfs/eda/shared/ddm_venv/bin/activate.csh
 ddm check  # 会显示过期锁，超时自动清除
 ```
 
+### Q: `! BLAKE3 not available`
+
+不影响功能。系统自动降级到 BLAKE2b-256，仅大文件 hash 计算略慢。离线环境如需 BLAKE3 加速，在有网机器下载 `blake3` wheel 放入 `offline_packages/`。
+
 ### Q: Tab 不补全
 
 ```csh
