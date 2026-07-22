@@ -34,17 +34,34 @@ pip install -r /nfs/eda/shared/ddm/requirements.txt
 echo "/nfs/eda/shared/ddm" > /nfs/eda/shared/ddm_venv/lib/python3.9/site-packages/ddm.pth
 ```
 
-**离线环境**（系统已预装 click/rich/pydantic 等依赖）：
+**离线环境 A**（系统已预装 click/rich/pydantic 等依赖）：
 
 ```csh
 python3 -m venv --system-site-packages /nfs/eda/shared/ddm_venv
 echo "/nfs/eda/shared/ddm" > /nfs/eda/shared/ddm_venv/lib/python3.9/site-packages/ddm.pth
 ```
 
-`--system-site-packages` 让 venv 继承系统已装的 Python 包，无需 pip install。验证系统已有依赖：
+验证：
 
 ```csh
 python3 -c "import click, rich, pydantic, yaml, loguru, psutil, blake3; print('OK')"
+```
+
+**离线环境 B**（系统没有任何依赖，需要提前准备离线包）：
+
+在有网络的机器上运行一次：
+
+```bash
+./build_offline.sh    # 下载所有依赖到 dist/offline_packages/
+```
+
+将 `dist/offline_packages/` + `ddm/` 源码一起传到离线服务器，然后：
+
+```csh
+python3 -m venv /nfs/eda/shared/ddm_venv
+source /nfs/eda/shared/ddm_venv/bin/activate.csh
+pip install --no-index --find-links /nfs/eda/shared/offline_packages/ -r /nfs/eda/shared/ddm/requirements.txt
+echo "/nfs/eda/shared/ddm" > /nfs/eda/shared/ddm_venv/lib/python3.9/site-packages/ddm.pth
 ```
 
 ### 1.3 编辑 config.yaml
