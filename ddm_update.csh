@@ -26,8 +26,6 @@
 
 # ---- 配置 ----
 set INSTALL_DIR = "$HOME/ddm"                   # 默认安装目录
-set DDM_LINK   = "$HOME/ddm"
-set DDM_HOME   = "$HOME/ddm_home"
 
 # ---- 参数解析 ----
 set method    = ""
@@ -68,15 +66,15 @@ while ($#argv > 0)
     shift
 end
 
-# 管理数据统一放在 ~/.ddm/ 下，--dir 只控制软链接位置
+# 管理数据放在 install_dir 同级 .ddm/ 下
 set DDM_LINK   = "$INSTALL_DIR"
-set DDM_HOME   = "$HOME/.ddm"
-set RELEASES   = "$DDM_HOME/releases"           # 版本归档
-set BACKUP_DIR = "$DDM_HOME/backups"            # 旧版本备份
-set CONFIG_BAK = "$DDM_HOME/current_config.yaml" # 配置备份
+set DDM_MGMT   = `dirname "$INSTALL_DIR"`/.ddm
+set RELEASES   = "$DDM_MGMT/releases"           # 版本归档
+set BACKUP_DIR = "$DDM_MGMT/backups"            # 旧版本备份
+set CONFIG_BAK = "$DDM_MGMT/current_config.yaml" # 配置备份
 
 # ---- 初始化工作区 ----
-if (! -d "$DDM_HOME") mkdir -p "$DDM_HOME"
+if (! -d "$DDM_MGMT") mkdir -p "$DDM_MGMT"
 if (! -d "$RELEASES")  mkdir -p "$RELEASES"
 if (! -d "$BACKUP_DIR") mkdir -p "$BACKUP_DIR"
 
