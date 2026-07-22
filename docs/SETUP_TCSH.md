@@ -25,11 +25,26 @@ tar -xzf ddm.tar.gz -C ddm
 
 ### 1.2 创建共享 Python 虚拟环境
 
+**在线环境**（venv 自带所有依赖）：
+
 ```csh
 python3 -m venv /nfs/eda/shared/ddm_venv
 source /nfs/eda/shared/ddm_venv/bin/activate.csh
 pip install -r /nfs/eda/shared/ddm/requirements.txt
 echo "/nfs/eda/shared/ddm" > /nfs/eda/shared/ddm_venv/lib/python3.9/site-packages/ddm.pth
+```
+
+**离线环境**（系统已预装 click/rich/pydantic 等依赖）：
+
+```csh
+python3 -m venv --system-site-packages /nfs/eda/shared/ddm_venv
+echo "/nfs/eda/shared/ddm" > /nfs/eda/shared/ddm_venv/lib/python3.9/site-packages/ddm.pth
+```
+
+`--system-site-packages` 让 venv 继承系统已装的 Python 包，无需 pip install。验证系统已有依赖：
+
+```csh
+python3 -c "import click, rich, pydantic, yaml, loguru, psutil, blake3; print('OK')"
 ```
 
 ### 1.3 编辑 config.yaml
