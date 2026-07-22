@@ -81,30 +81,56 @@ echo "============================================"
 echo ""
 
 # ---- Step 1: create shared venv ----
-echo "--- Step 1: 创建共享虚拟环境 ---"
+echo "--- Step 1: 创建共享虚拟环境 (继承系统包) ---"
 if [ ! -d "$DDM_ROOT/venv" ]; then
-    python3 -m venv "$DDM_ROOT/venv"
+    python3 -m venv --system-site-packages "$DDM_ROOT/venv"
     echo "  venv 已创建: $DDM_ROOT/venv"
 else
     echo "  venv 已存在，跳过"
 fi
 
-# Activate venv for pip install
 source "$DDM_ROOT/venv/bin/activate"
 
-# ---- Step 2: install Python deps ----
+# ---- Step 2: install missing Python deps ----
 echo ""
 echo "--- Step 2: Python 依赖 ---"
-if [ -d offline_packages ] && [ "$(ls -A offline_packages 2>/dev/null)" ]; then
-    echo "  从离线包安装..."
-    pip install --no-index --find-links offline_packages/ -r requirements.txt 2>&1 | tail -3
+# Try importing each required package; only install what's missing
+MISSING=""
+for pkg in click rich pydantic loguru psutil blake3; do
+    /usr/bin/env python3 -c "import $pkg" 2>/dev/null || MISSING="$MISSING $pkg"
+done
+/usr/bin/env python3 -c "import yaml" 2>/dev/null || MISSING="$MISSING PyYAML"
+if [ -n "$MISSING" ]; then
+    echo "  缺失: $MISSING"
+    if [ -d offline_packages ] && [ "$(ls -A offline_packages 2>/dev/null)" ]; then
+        echo "  从离线包安装..."
+        pip install --no-index --find-links offline_packages/ -r requirements.txt 2>&1 | tail -3
+    else
+        echo "  在线安装..."
+        pip install -r requirements.txt 2>&1 | tail -3
+    fi
 else
-    echo "  在线安装 (无离线包)..."
-    pip install -r requirements.txt 2>&1 | tail -3
+    echo "  所有依赖已从系统环境继承"
+fi
+    if ! python3 -c "import $pkg" 2>/dev/null; then
+        MISSING="$MISSING $pkg"
+    fi
+done
+if [ -n "$MISSING" ]; then
+    echo "  缺失: $MISSING"
+    if [ -d offline_packages ] && [ "$(ls -A offline_packages 2>/dev/null)" ]; then
+        echo "  从离线包安装..."
+        pip install --no-index --find-links offline_packages/ -r requirements.txt 2>&1 | tail -3
+    else
+        echo "  在线安装..."
+        pip install -r requirements.txt 2>&1 | tail -3
+    fi
+else
+    echo "  所有依赖已从系统环境继承"
 fi
 echo ""
 
-# ---- Step 3: install DDM in development mode ----
+# ---- Step 3: install DDM ----
 echo "--- Step 3: 安装 DDM ---"
 pip install -e "$DDM_ROOT" 2>&1 | tail -3
 echo "  ddm 已安装到 venv"
