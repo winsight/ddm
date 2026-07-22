@@ -80,7 +80,7 @@ if ($list_vers) then
     endif
     echo ""
     if (-d "$RELEASES") then
-        ls -1dt "$RELEASES"/*/ | sed 's|.*/||;s|/$||' | while read v
+        foreach v (`ls -1dt "$RELEASES"/*/ | sed 's|.*/||;s|/$||'`)
             echo "    $v"
         end
     endif
@@ -142,15 +142,15 @@ if (! -f "$tar_file") then
     exit 1
 endif
 
-set tar_size = `stat -c%s "$tar_file" 2>/dev/null || stat -f%z "$tar_file" 2>/dev/null`
+set tar_size = `python3 -c "import os; print(os.path.getsize('$tar_file'))"`
 if ($tar_size < 1024) then
-    echo "错误: 压缩包太小 ($tar_size bytes)，可能已损坏"
+    echo "错误: 压缩包太小 (${tar_size} bytes)，可能已损坏"
     rm -f "$tar_file"
     exit 1
 endif
 
 # 提取版本名
-set top_dir = `tar tzf "$tar_file" 2>/dev/null | head -1 | sed 's|/.*||'`
+set top_dir = `tar tzf "$tar_file" | head -1 | sed 's|/.*||'`
 if ("$top_dir" == "") then
     echo "错误: 无法读取压缩包内容"
     rm -f "$tar_file"
