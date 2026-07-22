@@ -112,14 +112,19 @@ echo "  ddm 已安装到 venv"
 # ---- Step 4: fix permissions ----
 echo ""
 echo "--- Step 4: 权限 ---"
+# Read shared_group from config, default to wheel
+SHARED_GRP=$(python3 -c "import yaml; c=yaml.safe_load(open('config/config.yaml')); print(c.get('shared_group','wheel'))" 2>/dev/null || echo "wheel")
+echo "  共享组: $SHARED_GRP"
+
 chmod -R g+rX,o+rX "$DDM_ROOT"
 chmod -R g+w "$DDM_ROOT/repository" "$DDM_ROOT/logs" "$DDM_ROOT/a0.outgoing" 2>/dev/null || true
-# SGID on repo dirs so new files inherit group
-for d in repository repository/raw repository/ready repository/release; do
+# chgrp + SGID on runtime dirs so new files inherit the shared group
+for d in repository repository/raw repository/ready repository/release logs a0.outgoing; do
     mkdir -p "$DDM_ROOT/$d"
+    chgrp "$SHARED_GRP" "$DDM_ROOT/$d" 2>/dev/null || true
     chmod 2775 "$DDM_ROOT/$d" 2>/dev/null || true
 done
-echo "  目录权限已设置 (2775 SGID)"
+echo "  目录权限已设置 (2775 SGID, group=$SHARED_GRP)"
 
 # ---- Step 5: config.yaml ----
 echo ""
