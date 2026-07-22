@@ -61,7 +61,7 @@ cp requirements.txt "$PACKAGE_DIR/"
 cp -r dist/offline_packages "$PACKAGE_DIR/"
 
 # Docs
-cp docs/*.md "$PACKAGE_DIR/" 2>/dev/null || true
+cp -r docs "$PACKAGE_DIR/"
 
 # Install script for the offline server
 cat > "$PACKAGE_DIR/install.sh" << 'INSTALL_SCRIPT'
@@ -195,7 +195,7 @@ For each user:
   ddm check
   ddm submit -m CPU -t PV_ITER
 
-Docs: SETUP_TCSH.md | USER_GUIDE.md | DEPLOY.md | WORKFLOWS.md
+Docs: docs/SETUP_TCSH.md | docs/USER_GUIDE.md | docs/WORKFLOWS.md
 README
 
 cd dist
