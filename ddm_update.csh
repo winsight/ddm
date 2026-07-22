@@ -5,6 +5,7 @@
 # 用法：
 #   方法1: 指定新包路径（本地或 NFS 路径）
 #     ddm_update.csh /path/to/ddm_v2.2.tar.gz
+#     ddm_update.csh --dir /nfs/eda/shared/ddm /path/to/ddm_v2.2.tar.gz
 #
 #   方法2: scp 从远程拉取
 #     ddm_update.csh user@server:/path/to/ddm_v2.2.tar.gz
@@ -16,19 +17,17 @@
 #     ddm_update.csh --list
 #
 # 部署目录结构:
-#   ~/ddm                 → 软链接，指向生产版本
-#   ~/ddm_home/           备份工作区
+#   $INSTALL_DIR          → 软链接，指向生产版本 (默认 ~/ddm)
+#   ${INSTALL_DIR}_home/  备份工作区
 #     releases/            各版本归档
 #     backups/             旧版本备份
 #     current_config.yaml  当前配置备份
 #=========================================================================
 
 # ---- 配置 ----
-set DDM_LINK   = "$HOME/ddm"                   # 生产软链接
-set DDM_HOME   = "$HOME/ddm_home"               # 工作区
-set RELEASES   = "$DDM_HOME/releases"           # 版本归档
-set BACKUP_DIR = "$DDM_HOME/backups"            # 旧版本备份
-set CONFIG_BAK = "$DDM_HOME/current_config.yaml" # 配置备份
+set INSTALL_DIR = "$HOME/ddm"                   # 默认安装目录
+set DDM_LINK   = "$HOME/ddm"
+set DDM_HOME   = "$HOME/ddm_home"
 
 # ---- 参数解析 ----
 set method    = ""
@@ -50,6 +49,10 @@ while ($#argv > 0)
         case --force:
             set force = 1
             breaksw
+        case --dir:
+            shift
+            set INSTALL_DIR = "$argv[1]"
+            breaksw
         case --help:
         case -h:
             goto usage
@@ -64,6 +67,13 @@ while ($#argv > 0)
     endsw
     shift
 end
+
+# 根据 INSTALL_DIR 推导路径
+set DDM_LINK   = "$INSTALL_DIR"
+set DDM_HOME   = "${INSTALL_DIR}_home"
+set RELEASES   = "$DDM_HOME/releases"           # 版本归档
+set BACKUP_DIR = "$DDM_HOME/backups"            # 旧版本备份
+set CONFIG_BAK = "$DDM_HOME/current_config.yaml" # 配置备份
 
 # ---- 初始化工作区 ----
 if (! -d "$DDM_HOME") mkdir -p "$DDM_HOME"
@@ -262,10 +272,12 @@ usage:
     echo "  $0 --list                              列出已安装版本"
     echo ""
     echo "选项:"
-    echo "  --force    覆盖已存在的版本"
+    echo "  --dir PATH    安装目录 (默认: ~/ddm)"
+    echo "  --force       覆盖已存在的版本"
     echo ""
     echo "示例:"
     echo "  $0 /nfs/eda/packages/ddm_v2.2.tar.gz"
+    echo "  $0 --dir /nfs/eda/shared/ddm /nfs/eda/packages/ddm_v2.2.tar.gz"
     echo "  $0 user@dev-server:/tmp/ddm_v2.2.tar.gz"
     echo "  $0 --rollback"
     echo ""
