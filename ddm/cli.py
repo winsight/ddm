@@ -332,6 +332,18 @@ def _submit(ctx, module, tag, summary):
 
     console.print(f"\n[bold cyan]Submit[/] module=[bold]{module}[/] tag=[bold]{tag}[/] user=[bold]{username}[/]")
 
+    # ---- fast-fail: group membership ----
+    import grp as _grp
+    try:
+        _gid = _grp.getgrnam(cfg.shared_group).gr_gid
+        if _gid not in os.getgroups():
+            console.print(f"  [red]✗[/] 用户 {username} 不在共享组 [{cfg.shared_group}] 中。")
+            console.print(f"    [dim]请联系管理员将你加入 {cfg.shared_group} 组。[/]")
+            sys.exit(1)
+    except KeyError:
+        console.print(f"  [yellow]![/] 共享组 [{cfg.shared_group}] 不存在于系统。请联系管理员。")
+        sys.exit(1)
+
     pbar_task = None
     pbar = None
 
@@ -807,21 +819,49 @@ def check(ctx):
         else:
             console.print(f"  [yellow]![/] {label} (not created yet): {show_path}")
 
-    # Shared group membership (required for multi-user file access)
+    # Shared group + owner membership verification
     import grp
     user = os.environ.get("USER", "")
     shared_group = cfg.shared_group
+    group_exists = False
+    user_in_group = False
     try:
-        gids = os.getgroups()
         gid = grp.getgrnam(shared_group).gr_gid
+        group_exists = True
+        gids = os.getgroups()
         if gid in gids:
+            user_in_group = True
             console.print(f"  [green]✓[/] Member of shared group: {shared_group}")
         else:
             console.print(f"  [red]✗[/] NOT in shared group '{shared_group}'. "
-                          f"Files created by other users may be inaccessible. "
                           f"Contact admin to add {user} to {shared_group}.")
     except KeyError:
         console.print(f"  [yellow]![/] Shared group '{shared_group}' not found on system")
+
+    # Check each module owner is in the shared group
+    if group_exists:
+        try:
+            members = set(grp.getgrnam(shared_group).gr_mem)
+        except Exception:
+            members = set()
+        owners_all = set()
+        for mod in cfg._raw.get("modules", {}):
+            for owner in cfg._raw["modules"][mod].get("owners", []):
+                owners_all.add(owner)
+        # Also check admins
+        for admin in cfg.admins:
+            owners_all.add(admin)
+
+        missing = []
+        for person in sorted(owners_all):
+            if person not in members:
+                missing.append(person)
+        if missing:
+            console.print(f"  [yellow]![/] These users are NOT in '{shared_group}' "
+                          f"group: {', '.join(missing)}")
+            console.print(f"    [dim]They will not be able to write to shared directories.[/]")
+        else:
+            console.print(f"  [green]✓[/] All owners/admins in shared group")
 
     # Stale lock detection — two-pass:
     #   PID dead → stale immediately (crash / kill -9)
