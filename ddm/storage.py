@@ -125,11 +125,16 @@ class Storage:
             conn.close()
 
     def _init_db(self):
+        is_new = not os.path.exists(self.db_path)
         with self._tx() as conn:
             conn.executescript(DDL)
-        # Ensure DB file is group-readable for multi-user access
-        import os as _os
-        _os.chmod(self.db_path, 0o664)
+        # Ensure DB file is group-readable (only owner can chmod)
+        if is_new:
+            try:
+                import os as _os
+                _os.chmod(self.db_path, 0o664)
+            except (PermissionError, OSError):
+                pass
         logger.info(f"Database initialized at {self.db_path}")
 
     # ------------------------------------------------------------------
