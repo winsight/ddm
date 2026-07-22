@@ -100,10 +100,11 @@ def _ensure_dir(path: Path, repo_root: Path = Path(".")):
 
 def _write_op_log(log_path: Path, entry: str):
     """Append a timestamped entry to an operation log file."""
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_dir(log_path.parent)
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     with open(str(log_path), "a") as f:
         f.write(f"[{ts}] {entry}\n")
+    os.chmod(str(log_path), SHARED_FILE_PERMS)
 
 
 class LockError(Exception):
@@ -122,13 +123,14 @@ def _acquire_lock(lock_path: Path, description: str,
 
     Returns a warning string if a stale lock was auto-cleaned, else "".
     """
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_dir(lock_path.parent)
     try:
         fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         with os.fdopen(fd, "w") as f:
             f.write(f"pid={os.getpid()}\n"
                     f"user={os.environ.get('USER', '?')}\n"
                     f"time={time.time()}\n")
+        os.chmod(str(lock_path), SHARED_FILE_PERMS)
         return ""  # fresh lock acquired, no warning
     except FileExistsError:
         if auto_clean_stale and lock_path.exists():
@@ -166,6 +168,7 @@ def _acquire_lock(lock_path: Path, description: str,
                     f.write(f"pid={os.getpid()}\n"
                             f"user={os.environ.get('USER', '?')}\n"
                             f"time={time.time()}\n")
+                os.chmod(str(lock_path), SHARED_FILE_PERMS)
                 return (f"⚠ 检测到过期锁 ({reason}) 并已自动清除。"
                         f"如果原 submit 仍在运行，请立即 Ctrl+C 取消。")
         raise LockError(
@@ -237,7 +240,7 @@ def streaming_copy(
       a0 → raw (copy, utime) → ready (os.replace) → release (copy2)
     """
     dest = Path(dest_path)
-    dest.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_dir(dest.parent)
     src_stat = os.stat(source_path)
 
     if HAS_BLAKE3:

@@ -127,6 +127,9 @@ class Storage:
     def _init_db(self):
         with self._tx() as conn:
             conn.executescript(DDL)
+        # Ensure DB file is group-readable for multi-user access
+        import os as _os
+        _os.chmod(self.db_path, 0o664)
         logger.info(f"Database initialized at {self.db_path}")
 
     # ------------------------------------------------------------------
