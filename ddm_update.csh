@@ -204,6 +204,17 @@ if ($status != 0) then
 endif
 rm -f "$tar_file"
 
+# ---- Step 5.5: 运行 install.sh (创建 venv, 装依赖, 设权限) ----
+if (-f "$deploy_dir/install.sh") then
+    echo "  运行 install.sh..."
+    cd "$deploy_dir"
+    bash install.sh
+    if ($status != 0) then
+        echo "  警告: install.sh 返回非零，请检查"
+    endif
+    cd -
+endif
+
 # ---- Step 6: 恢复配置 ----
 if (-f "$CONFIG_BAK") then
     if (! -f "$deploy_dir/config/config.yaml") then
