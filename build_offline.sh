@@ -112,22 +112,6 @@ if [ -n "$MISSING" ]; then
 else
     echo "  所有依赖已从系统环境继承"
 fi
-    if ! python3 -c "import $pkg" 2>/dev/null; then
-        MISSING="$MISSING $pkg"
-    fi
-done
-if [ -n "$MISSING" ]; then
-    echo "  缺失: $MISSING"
-    if [ -d offline_packages ] && [ "$(ls -A offline_packages 2>/dev/null)" ]; then
-        echo "  从离线包安装..."
-        pip install --no-index --find-links offline_packages/ -r requirements.txt 2>&1 | tail -3
-    else
-        echo "  在线安装..."
-        pip install -r requirements.txt 2>&1 | tail -3
-    fi
-else
-    echo "  所有依赖已从系统环境继承"
-fi
 echo ""
 
 # ---- Step 3: install DDM ----
