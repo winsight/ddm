@@ -66,8 +66,8 @@ cp docs/*.md "$PACKAGE_DIR/" 2>/dev/null || true
 # Install script for the offline server
 cat > "$PACKAGE_DIR/install.sh" << 'INSTALL_SCRIPT'
 #!/bin/bash
-# DDM deployment script — shared NFS + tcsh environment
-# Run once per server/node by admin, then each user runs setup_user.sh
+# DDM deployment script — shared NFS + tcsh + venv
+# Admin runs this ONCE, then each user runs setup_user.sh
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -75,23 +75,43 @@ cd "$SCRIPT_DIR"
 DDM_ROOT="$SCRIPT_DIR"
 
 echo "============================================"
-echo "  DDM 部署脚本"
+echo "  DDM 部署脚本 (共享 venv)"
 echo "  DDM_ROOT = $DDM_ROOT"
 echo "============================================"
 echo ""
 
-# ---- Step 1: install Python deps if needed ----
-echo "--- Step 1: Python 依赖 ---"
-if [ -d offline_packages ] && [ "$(ls -A offline_packages 2>/dev/null)" ]; then
-    echo "  安装离线 pip 包到 ~/.local/ ..."
-    pip3 install --user --no-index --find-links offline_packages/ -r requirements.txt 2>&1 | tail -3
+# ---- Step 1: create shared venv ----
+echo "--- Step 1: 创建共享虚拟环境 ---"
+if [ ! -d "$DDM_ROOT/venv" ]; then
+    python3 -m venv "$DDM_ROOT/venv"
+    echo "  venv 已创建: $DDM_ROOT/venv"
 else
-    echo "  跳过 (无离线包)，请确认系统已安装: click rich pydantic pyyaml loguru psutil"
+    echo "  venv 已存在，跳过"
+fi
+
+# Activate venv for pip install
+source "$DDM_ROOT/venv/bin/activate"
+
+# ---- Step 2: install Python deps ----
+echo ""
+echo "--- Step 2: Python 依赖 ---"
+if [ -d offline_packages ] && [ "$(ls -A offline_packages 2>/dev/null)" ]; then
+    echo "  从离线包安装..."
+    pip install --no-index --find-links offline_packages/ -r requirements.txt 2>&1 | tail -3
+else
+    echo "  在线安装 (无离线包)..."
+    pip install -r requirements.txt 2>&1 | tail -3
 fi
 echo ""
 
-# ---- Step 2: fix permissions ----
-echo "--- Step 2: 权限 ---"
+# ---- Step 3: install DDM in development mode ----
+echo "--- Step 3: 安装 DDM ---"
+pip install -e "$DDM_ROOT" 2>&1 | tail -3
+echo "  ddm 已安装到 venv"
+
+# ---- Step 4: fix permissions ----
+echo ""
+echo "--- Step 4: 权限 ---"
 chmod -R g+rX,o+rX "$DDM_ROOT"
 chmod -R g+w "$DDM_ROOT/repository" "$DDM_ROOT/logs" "$DDM_ROOT/a0.outgoing" 2>/dev/null || true
 # SGID on repo dirs so new files inherit group
@@ -100,38 +120,35 @@ for d in repository repository/raw repository/ready repository/release; do
     chmod 2775 "$DDM_ROOT/$d" 2>/dev/null || true
 done
 echo "  目录权限已设置 (2775 SGID)"
-echo ""
 
-# ---- Step 3: config.yaml ----
-echo "--- Step 3: 配置 ---"
+# ---- Step 5: config.yaml ----
+echo ""
+echo "--- Step 5: 配置 ---"
 if [ ! -f config/config.yaml ]; then
     echo "  请创建 config/config.yaml (参考 docs/SETUP_TCSH.md)"
-    echo "  关键配置: outgoing_root + repository_root 用绝对路径"
+    echo "  关键: outgoing_root + repository_root 必须用绝对路径"
 else
     echo "  config/config.yaml 已存在"
 fi
-echo ""
 
-# ---- Step 4: user setup script ----
+# ---- Step 6: user setup script ----
 cat > "$DDM_ROOT/setup_user.sh" << 'USER_SETUP'
 #!/bin/bash
-# Run this ONCE per user to configure their tcsh environment
+# Run ONCE per user to configure their tcsh for DDM
 DDM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "=== DDM User Setup ==="
+echo "=== DDM User Setup (venv) ==="
 echo "  DDM_ROOT = $DDM_ROOT"
 echo ""
 
-# Add to ~/.cshrc if not already there
 if ! grep -q "DDM" ~/.cshrc 2>/dev/null; then
     cat >> ~/.cshrc << 'CSHRC'
 
-# ===== DDM =====
-setenv PYTHONPATH CSHRC_DDM_ROOT
+# ===== DDM (shared venv) =====
+source CSHRC_DDM_ROOT/venv/bin/activate.csh
 alias ddm 'python3 -m ddm'
 if (-f CSHRC_DDM_ROOT/ddm.complete.csh) source CSHRC_DDM_ROOT/ddm.complete.csh
 CSHRC
-    # Replace placeholder with actual path
     sed -i "s|CSHRC_DDM_ROOT|$DDM_ROOT|g" ~/.cshrc
     echo "  ~/.cshrc 已配置"
 else
@@ -140,24 +157,20 @@ fi
 
 echo ""
 echo "=== Done ==="
-echo "  请执行: source ~/.cshrc"
-echo "  然后:   ddm check"
+echo "  source ~/.cshrc  (或重新登录)"
+echo "  ddm check"
 USER_SETUP
 chmod +x "$DDM_ROOT/setup_user.sh"
 
 # ---- Done ----
+echo ""
 echo "============================================"
 echo "  部署完成"
 echo ""
-echo "  下一步 — 管理员:"
-echo "    1. 编辑 $DDM_ROOT/config/config.yaml"
-echo "    2. 路径用绝对路径 (如 /nfs/eda/shared/ddm/...)"
-echo "    3. sh $DDM_ROOT/setup_user.sh"
-echo ""
-echo "  下一步 — 普通用户:"
-echo "    sh $DDM_ROOT/setup_user.sh"
-echo "    source ~/.cshrc"
-echo "    ddm check"
+echo "  管理员: vi $DDM_ROOT/config/config.yaml"
+echo "  用户:   sh $DDM_ROOT/setup_user.sh"
+echo "          source ~/.cshrc"
+echo "          ddm check"
 echo "============================================"
 INSTALL_SCRIPT
 chmod +x "$PACKAGE_DIR/install.sh"
