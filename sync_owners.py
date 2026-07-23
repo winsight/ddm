@@ -51,7 +51,7 @@ def parse_tcl_owners(tcl_path):
 
 
 def update_config(config_path, new_owners, dry_run=False):
-    """Update config.yaml modules section with parsed owners."""
+    """Update only the modules: section in config.yaml, preserving all else."""
     path = Path(config_path)
     if not path.exists():
         print(f"✗ Config not found: {config_path}")
@@ -59,6 +59,8 @@ def update_config(config_path, new_owners, dry_run=False):
 
     with open(path) as f:
         config = yaml.safe_load(f)
+    with open(path) as f:
+        original = f.read()
 
     if "modules" not in config:
         config["modules"] = {}
@@ -66,38 +68,46 @@ def update_config(config_path, new_owners, dry_run=False):
     updated = []
     added = []
     kept_old = []
+    modules_config = {}
 
+    # Build merged module config
     for module, users in new_owners.items():
         if module in config.get("modules", {}):
-            # Merge: keep existing owners that aren't in the new list
             existing = set(config["modules"][module].get("owners", []))
             new_set = set(users)
-            merged = list(new_set | existing)  # union: new + existing
+            merged = sorted(new_set | existing)
             if set(config["modules"][module].get("owners", [])) != set(merged):
-                config["modules"][module]["owners"] = merged
                 updated.append(module)
-            else:
-                # No change
-                pass
+            modules_config[module] = merged
         else:
-            config["modules"][module] = {"owners": users}
+            modules_config[module] = sorted(users)
             added.append(module)
 
-    # Modules in config but NOT in Tcl — keep as-is (handover)
+    # Keep existing modules not in Tcl
     for module in config.get("modules", {}):
-        if module not in new_owners:
+        if module not in modules_config:
+            modules_config[module] = config["modules"][module].get("owners", [])
             kept_old.append(module)
+
+    # Generate new modules: YAML block
+    lines = ["modules:"]
+    for module in sorted(modules_config):
+        lines.append(f"  {module}:")
+        lines.append(f"    owners: [{', '.join(modules_config[module])}]")
+    new_block = "\n".join(lines) + "\n"
+
+    # Replace old modules: block with new one in the original text
+    import re as _re
+    pattern = _re.compile(r"^modules:.*?(?=^\S|\Z)", _re.DOTALL | _re.MULTILINE)
+    new_text = pattern.sub(lambda m: new_block, original, count=1)
 
     if dry_run:
         print("=== DRY RUN (no changes written) ===")
+        print("--- New modules: block ---")
+        print(new_block)
     else:
         with open(path, "w") as f:
-            yaml.safe_dump(
-                config, f,
-                default_flow_style=False,
-                allow_unicode=True,
-                sort_keys=False,
-            )
+            f.write(new_text)
         print(f"✓ Config updated: {config_path}")
 
     if added:
