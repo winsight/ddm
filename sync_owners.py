@@ -90,8 +90,16 @@ def update_config(config_path, new_owners, dry_run=False):
             kept_old.append(module)
 
     # Generate new modules: YAML block
+    # Order: new modules in Tcl encounter order, then existing modules alphabetically
+    tcl_order = list(new_owners.keys())
+    ordered = [m for m in tcl_order if m in modules_config]
+    # Append existing modules not in Tcl
+    for m in sorted(modules_config):
+        if m not in ordered:
+            ordered.append(m)
+
     lines = ["modules:"]
-    for module in sorted(modules_config):
+    for module in ordered:
         lines.append(f"  {module}:")
         lines.append(f"    owners: [{', '.join(modules_config[module])}]")
     new_block = "\n".join(lines) + "\n"
