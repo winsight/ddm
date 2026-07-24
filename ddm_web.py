@@ -95,6 +95,13 @@ tr:hover td { background: #fafafa; }
 .hash { font-family: monospace; font-size: 10px; color: var(--muted); }
 .empty { text-align: center; padding: 40px; color: var(--muted); }
 .row-count { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.pager { display: flex; justify-content: center; align-items: center; gap: 12px;
+         padding: 14px 0 4px; }
+.pager-btn { cursor: pointer; padding: 6px 12px; border: 1px solid var(--line);
+             border-radius: 6px; font-size: 13px; color: var(--text);
+             background: var(--panel); transition: background .15s; user-select: none; }
+.pager-btn:hover { background: #f4f4f5; }
+.pager-info { font-size: 13px; color: var(--muted); font-weight: 600; }
 .warn { color: var(--yellow); font-size: 11px; margin: 4px 0; }
 </style>
 </head>
@@ -206,12 +213,13 @@ function refreshTab() { currentPage = 1; loadTab(currentTab); }
 
 function pageNav() {
   if (totalPages <= 1) return '';
-  let h = '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;font-size:12px">';
-  h += '<button class="btn" '+(currentPage<=1?'disabled':'')+' onclick="goPage('+(currentPage-1)+')">◀ Prev</button>';
-  h += '<span style="color:var(--muted)">'+currentPage+'/'+totalPages+'</span>';
-  h += '<button class="btn" '+(currentPage>=totalPages?'disabled':'')+' onclick="goPage('+(currentPage+1)+')">Next ▶</button>';
-  h += '</div>';
-  return h;
+  const prevCls = currentPage <= 1 ? 'pointer-events:none;opacity:.3' : '';
+  const nextCls = currentPage >= totalPages ? 'pointer-events:none;opacity:.3' : '';
+  return '<div class="pager">'
+    + '<span class="pager-btn" style="'+prevCls+'" onclick="goPage('+(currentPage-1)+')">◀</span>'
+    + '<span class="pager-info">' + currentPage + ' / ' + totalPages + '</span>'
+    + '<span class="pager-btn" style="'+nextCls+'" onclick="goPage('+(currentPage+1)+')">▶</span>'
+    + '</div>';
 }
 function goPage(p) { if (p >= 1 && p <= totalPages) { currentPage = p; loaders[currentTab](); } }
 
@@ -261,7 +269,7 @@ async function loadBatches() {
       </tr>`;
     }).join('');
   }).join('');
-  document.getElementById('content').innerHTML = pageNav() + `<table>
+  document.getElementById('content').innerHTML = `<table>
     <thead><tr><th>UUID</th><th>Status</th><th>Module</th><th>Tag</th><th>User</th><th>Version</th><th>Summary</th><th>Time</th></tr></thead>
     <tbody>${rows}</tbody></table>` + pageNav();
 }
@@ -300,7 +308,7 @@ async function loadFiles() {
       </tr>`;
     }).join('');
   }).join('');
-  document.getElementById('content').innerHTML = pageNav() + `<table>
+  document.getElementById('content').innerHTML = `<table>
     <thead><tr><th>Batch</th><th>Status</th><th>File</th><th>BLAKE3</th><th>Size</th><th>Source</th><th>Time</th></tr></thead>
     <tbody>${rows}</tbody></table>` + pageNav();
 }
@@ -333,7 +341,7 @@ async function loadEvents() {
       </tr>`;
     }).join('');
   }).join('');
-  document.getElementById('content').innerHTML = pageNav() + `<table>
+  document.getElementById('content').innerHTML = `<table>
     <thead><tr><th>Batch</th><th>Event</th><th>Detail</th><th>Time</th></tr></thead>
     <tbody>${rows}</tbody></table>` + pageNav();
 }
