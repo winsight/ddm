@@ -26,6 +26,9 @@ mkdir -p dist/offline_packages
 # Install pip download tooling
 pip3 install --quiet --upgrade pip 2>/dev/null || true
 
+# Also download build deps (setuptools, wheel) needed for pip install -e
+pip3 download setuptools wheel -d dist/offline_packages/ 2>&1 | grep -v "^Requirement already" || true
+
 # Pass 1: Linux x86_64 binary wheels + pure-Python wheels
 pip3 download \
   --platform manylinux2014_x86_64 \
@@ -114,12 +117,20 @@ else
 fi
 echo ""
 
-# ---- Step 3: install DDM ----
-echo "--- Step 3: 安装 DDM ---"
+# ---- Step 3: ensure build tools (setuptools) are available ----
+echo "--- Step 3: 构建工具 ---"
+if [ -d offline_packages ] && [ "$(ls -A offline_packages 2>/dev/null)" ]; then
+    pip install --no-index --find-links offline_packages/ setuptools wheel 2>&1 | tail -1
+else
+    pip install setuptools wheel 2>&1 | tail -1
+fi
+
+# ---- Step 4: install DDM ----
+echo "--- Step 4: 安装 DDM ---"
 pip install -e "$DDM_ROOT" 2>&1 | tail -3
 echo "  ddm 已安装到 venv"
 
-# ---- Step 4: fix permissions (directories only, not files) ----
+# ---- Step 5: fix permissions (directories only, not files) ----
 echo ""
 echo "--- Step 4: 权限 ---"
 SHARED_GRP=$(python3 -c "import yaml; c=yaml.safe_load(open('config/config.yaml')); print(c.get('shared_group','wheel'))" 2>/dev/null || echo "wheel")
