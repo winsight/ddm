@@ -398,6 +398,8 @@ def _submit(ctx, module, tag, summary, user):
     if result.success:
         console.print(f"\n[bold green]✓[/] Submit successful")
         console.print(f"  {result.message}")
+        for w in result.warnings:
+            console.print(f"  [yellow]![/] {w}")
     else:
         console.print(f"\n[bold red]✗[/] Submit failed: {result.message}")
         sys.exit(1)

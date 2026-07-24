@@ -321,10 +321,12 @@ def check_disk_space(target_dir: str, required_ratio: float = 1.2) -> None:
 # ---------------------------------------------------------------------------
 
 class SubmitResult:
-    def __init__(self, batch_uuid: str, success: bool, message: str):
+    def __init__(self, batch_uuid: str, success: bool, message: str,
+                 warnings: list = None):
         self.batch_uuid = batch_uuid
         self.success = success
         self.message = message
+        self.warnings = warnings or []
 
 
 def submit(
@@ -541,7 +543,8 @@ def submit(
             logger.info(f"Submit complete: {batch_uuid} -> SUBMITTED "
                         f"({len(source_files)} files, {total_size} bytes)")
 
-            # Write operation log (non-fatal: don't fail submit if log is unwritable)
+            # Write operation log (non-fatal)
+            log_warnings = []
             try:
                 _write_op_log(
                     Path(config.outgoing_root.format(user=username, module=module)) / ".ddm_submit.log",
@@ -551,14 +554,12 @@ def submit(
                 )
             except OSError as e:
                 logger.warning(f"Failed to write submit log (non-fatal): {e}")
-                # Print to stderr so user can see it (submit suppresses loguru console)
-                from rich.console import Console as _RC
-                _RC(stderr=True).print(f"  [yellow]![/] 操作日志写入失败: {e}")
+                log_warnings.append(f"操作日志写入失败: {e}")
 
             msg = f"Submitted: {len(source_files)} files (total {total_size} bytes)"
             if stale_warning:
                 msg += f"\n{stale_warning}"
-            return SubmitResult(batch_uuid, True, msg)
+            return SubmitResult(batch_uuid, True, msg, warnings=log_warnings)
         else:
             storage.update_batch_status(batch_uuid, STATUS_FAILED)
             storage.add_event(batch_uuid, EVENT_POST_CHECK_FAIL, "Post-check mismatch")
