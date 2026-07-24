@@ -39,6 +39,7 @@ from ddm.storage import (
     STATUS_FAILED,
     STATUS_RELEASED,
     STATUS_SUBMITTED,
+    STATUS_SUPERSEDED,
     Storage,
 )
 
@@ -403,6 +404,12 @@ def submit(
             module=module, tag=tag, username=username, summary=summary
         )
         storage.add_event(batch_uuid, EVENT_SUBMIT_START, f"module={module} tag={tag} user={username}")
+
+        # Mark previous SUBMITTED batches of same module+tag as superseded
+        old_batches = storage.get_submitted_batches(tag=tag, module=module)
+        for ob in old_batches:
+            if ob["batch_uuid"] != batch_uuid:
+                storage.update_batch_status(ob["batch_uuid"], STATUS_SUPERSEDED)
 
         # ---- discover source files ----
         source_files = find_source_files(config.outgoing_root_resolved, patterns, username, module)

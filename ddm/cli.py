@@ -440,6 +440,7 @@ def _status(ctx, module, date_filter):
     status_colors = {
         "PENDING": "yellow",
         "SUBMITTED": "cyan",
+        "SUPERSEDED": "dim",
         "RELEASED": "green",
         "FAILED": "red",
     }
@@ -680,7 +681,7 @@ def _list_summary(storage, batches, tag, cfg):
     table.add_column("Time")
 
     status_colors = {
-        "PENDING": "yellow", "SUBMITTED": "cyan",
+        "PENDING": "yellow", "SUBMITTED": "cyan", "SUPERSEDED": "dim",
         "RELEASED": "green", "FAILED": "red",
     }
 
@@ -721,7 +722,7 @@ def _list_verbose(storage, batches, tag):
         files = storage.get_files(b["batch_uuid"])
         total_size = sum(f.get("file_size") or f.get("source_size", 0) for f in files)
         st = b["status"]
-        status_colors = {"PENDING": "yellow", "SUBMITTED": "cyan", "RELEASED": "green", "FAILED": "red"}
+        status_colors = {"PENDING": "yellow", "SUBMITTED": "cyan", "SUPERSEDED": "dim", "RELEASED": "green", "FAILED": "red"}
         color = status_colors.get(st, "white")
 
         # Build previous file sizes for delta
