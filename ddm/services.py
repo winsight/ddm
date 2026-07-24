@@ -538,13 +538,16 @@ def submit(
             logger.info(f"Submit complete: {batch_uuid} -> SUBMITTED "
                         f"({len(source_files)} files, {total_size} bytes)")
 
-            # Write operation log to the owner's a0.outgoing directory
-            _write_op_log(
-                Path(config.outgoing_root.format(user=username, module=module)) / ".ddm_submit.log",
-                f"submit  tag={tag}  module={module}  user={username}  "
-                f"files={len(source_files)}  size={total_size}  uuid={batch_uuid[:8]}  "
-                f"summary={summary or '-'}"
-            )
+            # Write operation log (non-fatal: don't fail submit if log is unwritable)
+            try:
+                _write_op_log(
+                    Path(config.outgoing_root.format(user=username, module=module)) / ".ddm_submit.log",
+                    f"submit  tag={tag}  module={module}  user={username}  "
+                    f"files={len(source_files)}  size={total_size}  uuid={batch_uuid[:8]}  "
+                    f"summary={summary or '-'}"
+                )
+            except OSError:
+                logger.warning(f"Failed to write submit log (non-fatal)")
 
             msg = f"Submitted: {len(source_files)} files (total {total_size} bytes)"
             if stale_warning:
@@ -959,13 +962,16 @@ def release(
 
         logger.info(f"Release complete: {tag}/{version} ({total_files} files)")
 
-        # Write operation log to release/<TAG>/
-        _write_op_log(
-            config.release_dir() / tag / ".ddm_release.log",
-            f"release  tag={tag}  version={version}  user={username}  "
-            f"files={total_files}  batches={len(batches)}  "
-            f"modules={sorted(set(b['module'] for b in batches))}"
-        )
+        # Write operation log (non-fatal)
+        try:
+            _write_op_log(
+                config.release_dir() / tag / ".ddm_release.log",
+                f"release  tag={tag}  version={version}  user={username}  "
+                f"files={total_files}  batches={len(batches)}  "
+                f"modules={sorted(set(b['module'] for b in batches))}"
+            )
+        except OSError:
+            logger.warning("Failed to write release log (non-fatal)")
 
         release_path = str(release_version_dir.resolve())
         return ReleaseResult(True,
