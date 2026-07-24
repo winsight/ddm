@@ -213,8 +213,15 @@ class Storage:
         return [self._row_to_dict(r) for r in rows]
 
     def get_submitted_batches(self, tag: Optional[str] = None, module: Optional[str] = None) -> list[dict]:
-        """Get batches ready for release (status=SUBMITTED)."""
-        return self.list_batches(module=module, tag=tag, status=STATUS_SUBMITTED)
+        """Get SUBMITTED batches, keeping only the latest per module."""
+        all_batches = self.list_batches(module=module, tag=tag, status=STATUS_SUBMITTED)
+        # Deduplicate: keep only the latest batch per module
+        latest = {}
+        for b in all_batches:
+            key = b["module"]
+            if key not in latest or b["created_at"] > latest[key]["created_at"]:
+                latest[key] = b
+        return sorted(latest.values(), key=lambda b: b["module"])
 
     # ------------------------------------------------------------------
     # files
