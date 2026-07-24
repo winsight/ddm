@@ -37,9 +37,10 @@ PAGE_HTML = r"""<!DOCTYPE html>
   --line: #e4e4e7; --green: #16a34a; --red: #dc2626; --yellow: #ca8a04;
   --cyan: #0891b2; --blue: #2563eb; --purple: #9333ea;
   --badge-pending: #fef9c3; --badge-submitted: #cffafe;
-  --badge-released: #dcfce7; --badge-failed: #fee2e2;
+  --badge-released: #dcfce7; --badge-failed: #fee2e2; --badge-superseded: #f3f4f6;
   --badge-pending-text: #a16207; --badge-submitted-text: #0e7490;
   --badge-released-text: #15803d; --badge-failed-text: #b91c1c;
+  --badge-superseded-text: #9ca3af;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -90,6 +91,7 @@ tr:hover td { background: #fafafa; }
 .badge-SUBMITTED { background: var(--badge-submitted); color: var(--badge-submitted-text); }
 .badge-RELEASED { background: var(--badge-released); color: var(--badge-released-text); }
 .badge-FAILED { background: var(--badge-failed); color: var(--badge-failed-text); }
+.badge-SUPERSEDED { background: var(--badge-superseded); color: var(--badge-superseded-text); }
 .hash { font-family: monospace; font-size: 10px; color: var(--muted); }
 .empty { text-align: center; padding: 40px; color: var(--muted); }
 .row-count { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
