@@ -1019,6 +1019,23 @@ def _version():
     console.print(f"  platform: {platform.system()} {platform.machine()}")
     console.print(f"  blake3:   {'available' if HAS_BLAKE3 else 'fallback (blake2b)'}")
 
+    # Changelog: read CHANGELOG.md from project root (if exists)
+    changelog_path = Path(_default_config_path()).parent.parent / "CHANGELOG.md"
+    if changelog_path.exists():
+        console.print(f"\n[bold]Recent Changes[/]")
+        content = changelog_path.read_text(errors="ignore")
+        # Extract version headers (## vX.Y.Z ...) up to the next major section
+        import re as _re
+        entries = _re.findall(r"^## (v[\d.]+.*)$", content, _re.MULTILINE)
+        shown = 0
+        for i, entry in enumerate(entries):
+            if shown >= 3:
+                break
+            console.print(f"  [cyan]{entry}[/]")
+            shown += 1
+        if len(entries) > 3:
+            console.print(f"  [dim]... {len(entries) - 3} more versions in CHANGELOG.md[/]")
+
 
 def _cli_entry():
     """Top-level entry: argcomplete activation, then -V/--version shortcut.
