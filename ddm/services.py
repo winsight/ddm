@@ -332,6 +332,7 @@ def submit(
     username: str,
     summary: str = "",
     on_step: Optional[Callable] = None,
+    admin_override: bool = False,
 ) -> SubmitResult:
     """Execute the full submit pipeline with unified progress callback.
 
@@ -354,7 +355,7 @@ def submit(
         return SubmitResult("", False, f"No file_patterns defined for tag: {tag}")
 
     # ---- fast-fail: module ownership ----
-    if not config.is_module_owner(module, username):
+    if not admin_override and not config.is_module_owner(module, username):
         owners = config.module_owners(module)
         admins_hint = f"，管理员: {', '.join(config.admins)}" if config.admins else ""
         if owners:

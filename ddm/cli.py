@@ -10,8 +10,6 @@ Shell completion:
 """
 # PYTHON_ARGCOMPLETE_OK
 
-from __future__ import annotations
-
 import os
 import re
 import sys
@@ -316,21 +314,37 @@ def main(ctx, config):
     help=f"Data tag: {', '.join(sorted(VALID_TAGS))}",
 )
 @click.option("-s", "--summary", default="", help="Submission summary / notes")
+@click.option(
+    "-u", "--user",
+    default=None,
+    hidden=True,
+    help="Admin: submit on behalf of another user",
+)
 @click.pass_context
-def _submit(ctx, module, tag, summary):
+def _submit(ctx, module, tag, summary, user):
     """Submit module data from a0.outgoing through gates to ready/."""
     config_path = ctx.obj["config_path"]
     logger.remove()  # suppress default stderr before any output
     cfg, storage = _init_config_and_storage(config_path)
     _setup_logger(cfg, console_output=False)
 
-    username = os.environ.get("USER", "unknown")
+    current_user = os.environ.get("USER", "unknown")
+    username = current_user
+
+    # Admin -u: submit on behalf of another user
+    if user and user != current_user:
+        if not _is_tag_admin(current_user, cfg):
+            console.print(f"  [red]✗[/] -u/--user 仅限管理员使用。")
+            sys.exit(1)
+        username = user
+        console.print(f"\n[bold cyan]Submit[/] module=[bold]{module}[/] tag=[bold]{tag}[/] "
+                      f"user=[bold]{username}[/] [dim](by admin {current_user})[/]")
+    else:
+        console.print(f"\n[bold cyan]Submit[/] module=[bold]{module}[/] tag=[bold]{tag}[/] user=[bold]{username}[/]")
 
     if tag not in cfg.tag_names():
         console.print(f"[red]Error:[/] Unknown tag '{tag}'. Known: {', '.join(cfg.tag_names())}")
         sys.exit(1)
-
-    console.print(f"\n[bold cyan]Submit[/] module=[bold]{module}[/] tag=[bold]{tag}[/] user=[bold]{username}[/]")
 
     # ---- fast-fail: group membership ----
     import grp as _grp
@@ -375,6 +389,7 @@ def _submit(ctx, module, tag, summary):
         username=username,
         summary=summary,
         on_step=on_step,
+        admin_override=(user is not None and user != current_user),
     )
 
     if pbar is not None:
