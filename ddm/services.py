@@ -552,8 +552,8 @@ def submit(
             except OSError as e:
                 logger.warning(f"Failed to write submit log (non-fatal): {e}")
                 # Print to stderr so user can see it (submit suppresses loguru console)
-                import sys as _sys
-                _sys.stderr.write(f"  \033[33m!\033[0m 操作日志写入失败: {e}\n")
+                from rich.console import Console as _RC
+                _RC(stderr=True).print(f"  [yellow]![/] 操作日志写入失败: {e}")
 
             msg = f"Submitted: {len(source_files)} files (total {total_size} bytes)"
             if stale_warning:
