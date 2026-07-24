@@ -549,8 +549,11 @@ def submit(
                     f"files={len(source_files)}  size={total_size}  uuid={batch_uuid[:8]}  "
                     f"summary={summary or '-'}"
                 )
-            except OSError:
-                logger.warning(f"Failed to write submit log (non-fatal)")
+            except OSError as e:
+                logger.warning(f"Failed to write submit log (non-fatal): {e}")
+                # Print to stderr so user can see it (submit suppresses loguru console)
+                import sys as _sys
+                _sys.stderr.write(f"  [yellow]![/] 操作日志写入失败: {e}\n")
 
             msg = f"Submitted: {len(source_files)} files (total {total_size} bytes)"
             if stale_warning:
@@ -973,8 +976,10 @@ def release(
                 f"files={total_files}  batches={len(batches)}  "
                 f"modules={sorted(set(b['module'] for b in batches))}"
             )
-        except OSError:
-            logger.warning("Failed to write release log (non-fatal)")
+        except OSError as e:
+            logger.warning(f"Failed to write release log (non-fatal): {e}")
+            import sys as _sys
+            _sys.stderr.write(f"  [yellow]![/] 操作日志写入失败: {e}\n")
 
         release_path = str(release_version_dir.resolve())
         return ReleaseResult(True,
