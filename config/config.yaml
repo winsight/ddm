@@ -7,11 +7,20 @@
 # module 为主键：一次 O(1) 查询即可判定某用户能否提交某模块。
 # admins 中的用户不受此限制，可以提交所有模块。
 modules:
+  PCIE_CTRL:
+    owners: [lisi]
+  USB_PHY:
+    owners: [wangshuai]
+  DMA:
+    owners: [w00949819]
+  GPU_TOP:
+    owners: [lisi]
+  SPI:
+    owners: [w00888888]
   CPU:
     owners: [w00949819, zhangsan]
   DDR:
     owners: [lisi, l00949820]
-
 admins:
   - wangshuai
   - w00949819
@@ -34,7 +43,7 @@ file_groups:
 # ══════════════════════════════════════════════════════
 # 所有 DDM 用户必须属于此组，运行时目录将使用 SGID 确保组内可读写。
 # 目标服务器通常有 staff 或 wheel 组，开发机可按实际设置。
-shared_group: wheel
+shared_group: staff
 
 # ══════════════════════════════════════════════════════
 # 过期锁自动清理（分钟）
@@ -61,7 +70,7 @@ defaults:
       modules: [CPU, DDR]
       file_patterns:
         - "{module}.v.gz"
-        - "{module}.pi.hier.gds.gz"
+        #- "{module}.pi.hier.gds.gz"
         - "{module}.v.pg"
       gates:
         - name: verilog_syntax_check

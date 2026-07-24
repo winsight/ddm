@@ -2,8 +2,8 @@
 # sync_owners.py 解析此文件中的 OWNER 映射更新到 config.yaml
 
 # ---- 模块与 Owner 映射 ----
-set chip_owner(CPU,OWNER)       "w00949819"
-set chip_owner(DDR,OWNER)       "zhangsan"
+#set chip_owner(CPU,OWNER)       "w00949819"
+#set chip_owner(DDR,OWNER)       "zhangsan"
 set chip_owner(PCIE_CTRL,OWNER) "lisi"
 set chip_owner(USB_PHY,OWNER)   "wangshuai"
 
