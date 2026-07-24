@@ -27,6 +27,7 @@ class GateDef(BaseModel):
 class TagConfig(BaseModel):
     description: str = ""
     modules: List[str] = []
+    exclude_modules: List[str] = []
     file_patterns: List[str] = []
     gates: List[GateDef] = []
     release_users: List[str] = []
@@ -141,8 +142,11 @@ class Config:
         tc = self.tag_config(tag)
         if tc and tc.modules:
             return tc.modules
-        # Fall back to all configured modules (from top-level modules: section)
-        return sorted(self._raw.get("modules", {}).keys())
+        # Default to all configured modules, minus exclude_modules
+        all_mods = sorted(self._raw.get("modules", {}).keys())
+        if tc and tc.exclude_modules:
+            return [m for m in all_mods if m not in tc.exclude_modules]
+        return all_mods
 
     def file_patterns_for(self, tag: str) -> List[str]:
         tc = self.tag_config(tag)
