@@ -541,7 +541,7 @@ def submit(
             # Write operation log (non-fatal: don't fail submit if log is unwritable)
             try:
                 _write_op_log(
-                    config.resolve_path(config.outgoing_root.format(user=username, module=module)) / ".ddm_submit.log",
+                    Path(config.outgoing_root.format(user=username, module=module)) / ".ddm_submit.log",
                     f"submit  tag={tag}  module={module}  user={username}  "
                     f"files={len(source_files)}  size={total_size}  uuid={batch_uuid[:8]}  "
                     f"summary={summary or '-'}"
