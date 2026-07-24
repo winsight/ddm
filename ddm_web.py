@@ -351,15 +351,19 @@ const overviewTab = { batches: false, files: false, events: false, overview: tru
 
 function loadTab(tab) {
   currentTab = tab;
+  location.hash = tab;
   document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
   document.querySelector('.tab[data-tab="'+tab+'"]').classList.add('active');
   loaders[tab]();
-  // Show/hide filter bar for overview
   document.getElementById('filters').style.display = overviewTab[tab] ? 'none' : '';
 }
 
 document.querySelectorAll('.tab').forEach(t => {
   t.addEventListener('click', () => loadTab(t.dataset.tab));
+});
+window.addEventListener('hashchange', () => {
+  const tab = location.hash.replace('#', '');
+  if (tab && loaders[tab] && tab !== currentTab) loadTab(tab);
 });
 
 (async () => {
@@ -372,7 +376,8 @@ document.querySelectorAll('.tab').forEach(t => {
   } catch(e) { console.error(e); }
   renderFilters();
   loadStats();
-  loadBatches();
+  const startTab = location.hash.replace('#', '') || 'batches';
+  loadTab(startTab);
 })();
 </script>
 </body>
