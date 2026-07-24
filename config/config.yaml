@@ -63,11 +63,16 @@ repository_root: ./repository
 log_dir: ./logs
 
 # 默认 tag 配置 —— 所有模块自动继承
+#
+# 每个 tag 的模块配置方式（三选一）：
+#   modules: [CPU, DDR]         只含指定模块
+#   (不写 modules)               默认所有模块（取 modules: 节全部模块）
+#   exclude_modules: [GPU_TOP]  排除特定模块，其余全部参与
 defaults:
   tag:
     PV_ITER:
       description: 物理验证迭代版
-      modules: [CPU, DDR]
+      #modules: [CPU, DDR]
       file_patterns:
         - "{module}.v.gz"
         #- "{module}.pi.hier.gds.gz"
