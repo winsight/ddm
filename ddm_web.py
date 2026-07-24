@@ -94,6 +94,13 @@ tr:hover td { background: #fafafa; }
 .badge-SUPERSEDED { background: var(--badge-superseded); color: var(--badge-superseded-text); }
 .hash { font-family: monospace; font-size: 10px; color: var(--muted); }
 .empty { text-align: center; padding: 40px; color: var(--muted); }
+.fab { position: fixed; right: 20px; z-index: 99; width: 36px; height: 36px;
+       border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+       cursor: pointer; display: flex; align-items: center; justify-content: center;
+       color: var(--muted); font-size: 16px; transition: all .15s; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+.fab:hover { color: var(--text); border-color: #a1a1aa; box-shadow: 0 4px 12px rgba(0,0,0,.1); }
+.fab-top { bottom: 64px; }
+.fab-bot { bottom: 20px; }
 .row-count { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
 .pager { display: flex; justify-content: center; align-items: center; gap: 12px;
          padding: 14px 0 4px; }
@@ -413,6 +420,8 @@ window.addEventListener('popstate', () => {
   switchTab(startTab, false);
 })();
 </script>
+<div class="fab fab-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="页首">▲</div>
+<div class="fab fab-bot" onclick="window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'})" title="页尾">▼</div>
 </body>
 </html>"""
 
