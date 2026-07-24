@@ -91,6 +91,9 @@ def _ensure_dir(path: Path, repo_root: Path = Path(".")):
     bound = repo_root.resolve()
     while current != current.parent and str(current).startswith(str(bound)):
         try:
+            # Inherit group from parent dir (SGID ensures consistency)
+            parent_stat = os.stat(str(current.parent))
+            os.chown(str(current), -1, parent_stat.st_gid)
             os.chmod(str(current), SHARED_DIR_PERMS)
         except (PermissionError, OSError):
             pass  # not the owner, directory already exists with correct perms
