@@ -122,8 +122,9 @@ tr:hover td { background: #fafafa; }
 <script>
 const API = '/api';
 let currentTab = 'batches';
-let filters = { tag: '', module: '', status: '', time: '', sort: '' };
+let filters = { tag: '', module: '', status: '', time: '' };
 let allTags = [], allModules = [];
+let currentPage = 1, totalPages = 1, perPage = 50;
 
 async function fetchJSON(path) {
   const r = await fetch(API + path);
@@ -151,11 +152,13 @@ function fmtSize(n) {
 
 function fmtHash(h) { return h ? h.substring(0, 12) + '...' : '-'; }
 
-function buildQuery(filters) {
+function buildQuery(f, page) {
   const parts = [];
-  for (const [k, v] of Object.entries(filters)) {
+  for (const [k, v] of Object.entries(f)) {
     if (v) parts.push(k + '=' + encodeURIComponent(v));
   }
+  if (page > 1) { parts.push('page=' + page); parts.push('per_page=' + perPage); }
+  else if (page) { parts.push('per_page=' + perPage); }
   return parts.length ? '?' + parts.join('&') : '';
 }
 
@@ -199,7 +202,18 @@ function clearFilters() {
   loadTab(currentTab);
 }
 
-function refreshTab() { loadTab(currentTab); }
+function refreshTab() { currentPage = 1; loadTab(currentTab); }
+
+function pageNav() {
+  if (totalPages <= 1) return '';
+  let h = '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;font-size:12px">';
+  h += '<button class="btn" '+(currentPage<=1?'disabled':'')+' onclick="goPage('+(currentPage-1)+')">◀ Prev</button>';
+  h += '<span style="color:var(--muted)">'+currentPage+'/'+totalPages+'</span>';
+  h += '<button class="btn" '+(currentPage>=totalPages?'disabled':'')+' onclick="goPage('+(currentPage+1)+')">Next ▶</button>';
+  h += '</div>';
+  return h;
+}
+function goPage(p) { if (p >= 1 && p <= totalPages) { currentPage = p; loaders[currentTab](); } }
 
 // ---- Stats ----
 async function loadStats() {
@@ -216,15 +230,16 @@ async function loadStats() {
 
 // ---- Batches Table ----
 async function loadBatches() {
-  const data = await fetchJSON('/batches'+buildQuery(filters));
-  document.getElementById('row-count').textContent = data.length + ' batches';
-  if (!data.length) {
+  const data = await fetchJSON('/batches'+buildQuery(filters,currentPage));
+  totalPages = data.total_pages || 1;
+  document.getElementById('row-count').innerHTML = data.total + ' batches'
+    + (totalPages > 1 ? ' — page ' + currentPage + '/' + totalPages : '');
+  if (!data.rows || !data.rows.length) {
     document.getElementById('content').innerHTML = '<div class="empty">No batches found</div>'; return;
   }
-  // Group by module+tag
   const groups = [];
   let last = '';
-  for (const b of data) {
+  for (const b of data.rows) {
     const key = (b.module||'') + '/' + (b.tag||'');
     if (key !== last) { groups.push([]); last = key; }
     groups[groups.length-1].push(b);
@@ -246,22 +261,24 @@ async function loadBatches() {
       </tr>`;
     }).join('');
   }).join('');
-  document.getElementById('content').innerHTML = `<table>
+  document.getElementById('content').innerHTML = pageNav() + `<table>
     <thead><tr><th>UUID</th><th>Status</th><th>Module</th><th>Tag</th><th>User</th><th>Version</th><th>Summary</th><th>Time</th></tr></thead>
-    <tbody>${rows}</tbody></table>`;
+    <tbody>${rows}</tbody></table>` + pageNav();
 }
 
 // ---- Files Table (grouped by batch with visual separation) ----
 async function loadFiles() {
-  const data = await fetchJSON('/files'+buildQuery(filters));
-  document.getElementById('row-count').textContent = data.length + ' files';
-  if (!data.length) {
+  const data = await fetchJSON('/files'+buildQuery(filters,currentPage));
+  totalPages = data.total_pages || 1;
+  document.getElementById('row-count').innerHTML = data.total + ' files'
+    + (totalPages > 1 ? ' — page ' + currentPage + '/' + totalPages : '');
+  if (!data.rows || !data.rows.length) {
     document.getElementById('content').innerHTML = '<div class="empty">No files found</div>'; return;
   }
   // Group by batch_uuid
   const groups = [];
   let last = '';
-  for (const f of data) {
+  for (const f of data.rows) {
     if (f.batch_uuid !== last) { groups.push([]); last = f.batch_uuid; }
     groups[groups.length-1].push(f);
   }
@@ -283,21 +300,23 @@ async function loadFiles() {
       </tr>`;
     }).join('');
   }).join('');
-  document.getElementById('content').innerHTML = `<table>
+  document.getElementById('content').innerHTML = pageNav() + `<table>
     <thead><tr><th>Batch</th><th>Status</th><th>File</th><th>BLAKE3</th><th>Size</th><th>Source</th><th>Time</th></tr></thead>
-    <tbody>${rows}</tbody></table>`;
+    <tbody>${rows}</tbody></table>` + pageNav();
 }
 
 // ---- Events Table ----
 async function loadEvents() {
-  const data = await fetchJSON('/events'+buildQuery(filters));
-  document.getElementById('row-count').textContent = data.length + ' events';
-  if (!data.length) {
+  const data = await fetchJSON('/events'+buildQuery(filters,currentPage));
+  totalPages = data.total_pages || 1;
+  document.getElementById('row-count').innerHTML = data.total + ' events'
+    + (totalPages > 1 ? ' — page ' + currentPage + '/' + totalPages : '');
+  if (!data.rows || !data.rows.length) {
     document.getElementById('content').innerHTML = '<div class="empty">No events found</div>'; return;
   }
   const groups = [];
   let last = '';
-  for (const e of data) {
+  for (const e of data.rows) {
     if (e.batch_uuid !== last) { groups.push([]); last = e.batch_uuid; }
     groups[groups.length-1].push(e);
   }
@@ -314,9 +333,9 @@ async function loadEvents() {
       </tr>`;
     }).join('');
   }).join('');
-  document.getElementById('content').innerHTML = `<table>
+  document.getElementById('content').innerHTML = pageNav() + `<table>
     <thead><tr><th>Batch</th><th>Event</th><th>Detail</th><th>Time</th></tr></thead>
-    <tbody>${rows}</tbody></table>`;
+    <tbody>${rows}</tbody></table>` + pageNav();
 }
 
 // ---- Overview (tag × module matrix) ----
@@ -348,22 +367,28 @@ async function loadOverview() {
 
 const loaders = { batches: loadBatches, files: loadFiles, events: loadEvents, overview: loadOverview };
 const overviewTab = { batches: false, files: false, events: false, overview: true };
+const noPager = { overview: true };
 
-function loadTab(tab) {
+function switchTab(tab, pushHash) {
   currentTab = tab;
-  location.hash = tab;
+  currentPage = 1;
+  if (pushHash !== false && location.hash.substring(1) !== tab) {
+    history.pushState(null, '', '#' + tab);
+  }
   document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
   document.querySelector('.tab[data-tab="'+tab+'"]').classList.add('active');
   loaders[tab]();
   document.getElementById('filters').style.display = overviewTab[tab] ? 'none' : '';
 }
 
+function loadTab(tab) { switchTab(tab, true); }
+
 document.querySelectorAll('.tab').forEach(t => {
-  t.addEventListener('click', () => loadTab(t.dataset.tab));
+  t.addEventListener('click', () => switchTab(t.dataset.tab));
 });
-window.addEventListener('hashchange', () => {
-  const tab = location.hash.replace('#', '');
-  if (tab && loaders[tab] && tab !== currentTab) loadTab(tab);
+window.addEventListener('popstate', () => {
+  const tab = location.hash.substring(1) || 'batches';
+  if (loaders[tab] && tab !== currentTab) switchTab(tab, false);
 });
 
 (async () => {
@@ -376,8 +401,8 @@ window.addEventListener('hashchange', () => {
   } catch(e) { console.error(e); }
   renderFilters();
   loadStats();
-  const startTab = location.hash.replace('#', '') || 'batches';
-  loadTab(startTab);
+  const startTab = location.hash.substring(1) || 'batches';
+  switchTab(startTab, false);
 })();
 </script>
 </body>
@@ -411,14 +436,32 @@ class APIHandler(BaseHTTPRequestHandler):
             db.close()
 
     def _parse_filters(self, parsed) -> dict:
-        """Parse filter params from query string."""
+        """Parse filter + pagination params from query string."""
         qs = parse_qs(parsed.query)
         f = {}
-        for key in ("tag", "module", "status", "time", "sort"):
+        for key in ("tag", "module", "status", "time"):
             val = qs.get(key, [""])[0]
             if val:
                 f[key] = val
+        f["page"] = int(qs.get("page", ["1"])[0])
+        f["per_page"] = int(qs.get("per_page", ["50"])[0])
         return f
+
+    def _paginate(self, sql, params, filters):
+        """Execute paginated query, return {total, total_pages, rows}."""
+        page = filters.get("page", 1)
+        per_page = filters.get("per_page", 50)
+        offset = (page - 1) * per_page
+
+        # Count total
+        count_sql = f"SELECT COUNT(*) FROM ({sql})"
+        db = sqlite3.connect(self.db_path)
+        total = db.execute(count_sql, params).fetchone()[0]
+        db.close()
+
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        rows = self._query(f"{sql} LIMIT {per_page} OFFSET {offset}", params)
+        return {"total": total, "total_pages": total_pages, "rows": rows}
 
     def _build_where(self, filters: dict, table_alias: str = "") -> tuple:
         """Build WHERE clause from filters. Returns (clause, params)."""
@@ -492,29 +535,30 @@ class APIHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/batches":
                 filters = self._parse_filters(parsed)
                 where, params = self._build_where(filters)
-                rows = self._query(
-                    f"SELECT * FROM batches WHERE {where} ORDER BY created_at DESC LIMIT 500", params)
-                self._json(rows)
+                result = self._paginate(
+                    f"SELECT * FROM batches WHERE {where} ORDER BY created_at DESC",
+                    params, filters)
+                self._json(result)
 
             elif parsed.path == "/api/files":
                 filters = self._parse_filters(parsed)
                 where, params = self._build_where(filters, "b")
-                rows = self._query(f"""
+                result = self._paginate(f"""
                     SELECT f.*, b.status, b.tag, b.module FROM files f
                     JOIN batches b ON f.batch_uuid = b.batch_uuid
-                    WHERE {where} ORDER BY f.created_at DESC LIMIT 500
-                """, params)
-                self._json(rows)
+                    WHERE {where} ORDER BY f.created_at DESC
+                """, params, filters)
+                self._json(result)
 
             elif parsed.path == "/api/events":
                 filters = self._parse_filters(parsed)
                 where, params = self._build_where(filters, "b")
-                rows = self._query(f"""
+                result = self._paginate(f"""
                     SELECT e.*, b.tag, b.module FROM events e
                     JOIN batches b ON e.batch_uuid = b.batch_uuid
-                    WHERE {where} ORDER BY e.created_at DESC LIMIT 500
-                """, params)
-                self._json(rows)
+                    WHERE {where} ORDER BY e.created_at DESC
+                """, params, filters)
+                self._json(result)
 
             elif parsed.path == "/api/overview":
                 filters = self._parse_filters(parsed)
