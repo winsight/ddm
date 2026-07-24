@@ -139,7 +139,10 @@ class Config:
 
     def modules_for(self, tag: str) -> List[str]:
         tc = self.tag_config(tag)
-        return tc.modules if tc else []
+        if tc and tc.modules:
+            return tc.modules
+        # Fall back to all configured modules (from top-level modules: section)
+        return sorted(self._raw.get("modules", {}).keys())
 
     def file_patterns_for(self, tag: str) -> List[str]:
         tc = self.tag_config(tag)
