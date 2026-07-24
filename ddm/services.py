@@ -553,7 +553,7 @@ def submit(
                 logger.warning(f"Failed to write submit log (non-fatal): {e}")
                 # Print to stderr so user can see it (submit suppresses loguru console)
                 import sys as _sys
-                _sys.stderr.write(f"  [yellow]![/] 操作日志写入失败: {e}\n")
+                _sys.stderr.write(f"  \033[33m!\033[0m 操作日志写入失败: {e}\n")
 
             msg = f"Submitted: {len(source_files)} files (total {total_size} bytes)"
             if stale_warning:
@@ -979,7 +979,7 @@ def release(
         except OSError as e:
             logger.warning(f"Failed to write release log (non-fatal): {e}")
             import sys as _sys
-            _sys.stderr.write(f"  [yellow]![/] 操作日志写入失败: {e}\n")
+            _sys.stderr.write(f"  \033[33m!\033[0m 操作日志写入失败: {e}\n")
 
         release_path = str(release_version_dir.resolve())
         return ReleaseResult(True,
