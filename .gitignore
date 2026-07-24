@@ -37,3 +37,4 @@ venv/
 
 # Local auth config (contains credentials, do NOT commit)
 .claude/mail_config
+.claude/github_token
