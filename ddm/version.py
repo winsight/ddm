@@ -5,7 +5,7 @@ To bump the version, edit only this file:
   __changelog__ → list of (version, description) tuples, newest first
 """
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 __changelog__ = [
     ("v0.3.0", "2026-07-24 — 管理员-u替用户提交、SUPERSEDED覆盖状态、Web分页持久化、多用户权限完善"),
