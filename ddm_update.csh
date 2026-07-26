@@ -66,6 +66,10 @@ while ($#argv > 0)
     shift
 end
 
+# Resolve INSTALL_DIR to an absolute path so .cshrc gets an
+# absolute "source" line that works from any directory.
+set INSTALL_DIR = `readlink -f "$INSTALL_DIR"`
+
 # 管理数据放在 install_dir 同级 .ddm/ 下
 # 如果 dirname 是 / (root)，改用 /tmp/.ddm/
 set DDM_LINK   = "$INSTALL_DIR"
@@ -219,10 +223,15 @@ endif
 rm -f "$tar_file"
 
 # ---- Step 5.5: 运行 install.sh (创建 venv, 装依赖, 设权限) ----
+# Pass DDM_LINK so setup_user.sh embeds the *stable* symlink path,
+# not the versioned directory.  Users won't need to re-run setup after
+# an update — the symlink target changes but the path in .cshrc stays.
 if (-f "$deploy_dir/install.sh") then
     echo "  运行 install.sh..."
     cd "$deploy_dir"
+    setenv DDM_LINK "$INSTALL_DIR"
     bash install.sh
+    unsetenv DDM_LINK
     if ($status != 0) then
         echo "  警告: install.sh 返回非零，请检查"
     endif

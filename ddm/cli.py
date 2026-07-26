@@ -144,7 +144,7 @@ def _argcomplete_bridge():
 def _init_config_and_storage(config_path: str):
     """Load config and initialize storage. Returns (Config, Storage)."""
     cfg = Config(config_path)
-    storage = Storage(cfg.db_path())
+    storage = Storage(cfg.db_path(), shared_group_name=cfg.shared_group)
     return cfg, storage
 
 
@@ -152,6 +152,21 @@ def _setup_logger(cfg: Config, console_output: bool = True):
     """Configure loguru. When console_output=False, only log to file."""
     log_dir = Path(cfg.log_path())
     log_dir.mkdir(parents=True, exist_ok=True)
+    # Ensure log directory has the shared-group ownership and SGID perms
+    try:
+        import grp as _grp_lg
+        shared_gid = _grp_lg.getgrnam(cfg.shared_group).gr_gid
+        current = log_dir.resolve()
+        project_root = Path(cfg._project_root).resolve() if hasattr(cfg, '_project_root') else current.parent
+        while current != current.parent and str(current).startswith(str(project_root)):
+            try:
+                os.chown(str(current), -1, shared_gid)
+                os.chmod(str(current), 0o2775)
+            except (PermissionError, OSError):
+                pass
+            current = current.parent
+    except (KeyError, Exception):
+        pass  # shared group not on system — not fatal for logging
     logger.remove()
     if console_output:
         logger.add(

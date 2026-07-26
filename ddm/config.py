@@ -189,6 +189,21 @@ class Config:
         return self._model.shared_group if self._model else "staff"
 
     @property
+    def shared_group_gid(self) -> int:
+        """Return the GID of the shared group (cached after first lookup)."""
+        name = self.shared_group
+        if not hasattr(self, "_shared_group_gid_cache") or self._shared_group_gid_cache.get("name") != name:
+            import grp
+            try:
+                self._shared_group_gid_cache = {"name": name, "gid": grp.getgrnam(name).gr_gid}
+            except KeyError:
+                self._shared_group_gid_cache = {"name": name, "gid": None}
+        gid = self._shared_group_gid_cache.get("gid")
+        if gid is None:
+            raise KeyError(f"Shared group '{name}' not found on system")
+        return gid
+
+    @property
     def file_groups(self) -> dict:
         """Return the global file_groups mapping (group_name → suffix patterns)."""
         return self._model.file_groups if self._model else {}

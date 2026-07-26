@@ -81,20 +81,24 @@ SHARED_DIR_PERMS = 0o2775
 SHARED_FILE_PERMS = 0o664
 
 
-def _ensure_dir(path: Path, repo_root: Path = Path(".")):
+def _ensure_dir(path: Path, repo_root: Path = Path("."), shared_group_gid: int = None):
     """Create directory with SGID group-writable permissions for shared access.
 
     Chmod propagates up to all ancestors under repo_root so that parent
     directories (e.g. raw/, ready/) also carry SGID.
+
+    If *shared_group_gid* is provided it is used for chown; otherwise the
+    group is inherited from the parent directory (historic behaviour for
+    callers that do not have the config handy).
     """
     path.mkdir(parents=True, exist_ok=True)
     current = path.resolve()
     bound = repo_root.resolve()
     while current != current.parent and str(current).startswith(str(bound)):
         try:
-            # Inherit group from parent dir (SGID ensures consistency)
-            parent_stat = os.stat(str(current.parent))
-            os.chown(str(current), -1, parent_stat.st_gid)
+            gid = shared_group_gid if shared_group_gid is not None \
+                  else os.stat(str(current.parent)).st_gid
+            os.chown(str(current), -1, gid)
             os.chmod(str(current), SHARED_DIR_PERMS)
         except (PermissionError, OSError):
             pass  # not the owner, directory already exists with correct perms
@@ -105,9 +109,9 @@ def _ensure_dir(path: Path, repo_root: Path = Path(".")):
 # Lock helpers
 # ---------------------------------------------------------------------------
 
-def _write_op_log(log_path: Path, entry: str):
+def _write_op_log(log_path: Path, entry: str, shared_group_gid: int = None):
     """Append a timestamped entry to an operation log file."""
-    _ensure_dir(log_path.parent)
+    _ensure_dir(log_path.parent, shared_group_gid=shared_group_gid)
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     with open(str(log_path), "a") as f:
         f.write(f"[{ts}] {entry}\n")
@@ -120,7 +124,8 @@ class LockError(Exception):
 
 def _acquire_lock(lock_path: Path, description: str,
                   auto_clean_stale: bool = False,
-                  stale_seconds: int = 600) -> str:
+                  stale_seconds: int = 600,
+                  shared_group_gid: int = None) -> str:
     """Atomically create a lock file using O_CREAT|O_EXCL.
 
     If auto_clean_stale=True and the existing lock is older than
@@ -130,7 +135,7 @@ def _acquire_lock(lock_path: Path, description: str,
 
     Returns a warning string if a stale lock was auto-cleaned, else "".
     """
-    _ensure_dir(lock_path.parent)
+    _ensure_dir(lock_path.parent, shared_group_gid=shared_group_gid)
     try:
         fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         with os.fdopen(fd, "w") as f:
@@ -240,6 +245,7 @@ def find_source_files(
 def streaming_copy(
     source_path: str,
     dest_path: str,
+    shared_group_gid: int = None,
 ) -> Tuple[int, str]:
     """Stream-copy a file, computing BLAKE3 on the fly. Returns (size, hash_hex).
 
@@ -247,7 +253,7 @@ def streaming_copy(
       a0 → raw (copy, utime) → ready (os.replace) → release (copy2)
     """
     dest = Path(dest_path)
-    _ensure_dir(dest.parent)
+    _ensure_dir(dest.parent, shared_group_gid=shared_group_gid)
     src_stat = os.stat(source_path)
 
     if HAS_BLAKE3:
@@ -268,6 +274,9 @@ def streaming_copy(
 
     # Preserve original timestamp so later stages inherit it
     os.utime(str(dest), (src_stat.st_atime, src_stat.st_mtime))
+
+    # Ensure copied file is readable/writable by shared group
+    os.chmod(dest_path, SHARED_FILE_PERMS)
 
     return copied, hasher.hexdigest()
 
@@ -348,6 +357,9 @@ def submit(
       total  — total steps in this pipeline run
       detail — e.g. filename, gate name
     """
+    # Resolve shared-group GID once for all directory/file permission fixes
+    shared_gid = config.shared_group_gid
+
     # ---- validate ----
     if tag not in VALID_TAGS:
         return SubmitResult("", False, f"Invalid tag: {tag}. Valid: {sorted(VALID_TAGS)}")
@@ -387,7 +399,8 @@ def submit(
     try:
         stale_warning = _acquire_lock(mlock, f"模块 {module}/{tag} 正在提交",
                                        auto_clean_stale=True,
-                                       stale_seconds=config.stale_lock_minutes * 60)
+                                       stale_seconds=config.stale_lock_minutes * 60,
+                                       shared_group_gid=shared_gid)
     except LockError as e:
         logger.warning(str(e))
         return SubmitResult("", False, str(e))
@@ -396,7 +409,8 @@ def submit(
     try:
         # ---- disk space ----
         raw_base = config.raw_dir()
-        _ensure_dir(raw_base, Path(config.repository_root).resolve())
+        _ensure_dir(raw_base, Path(config.repository_root).resolve(),
+                     shared_group_gid=shared_gid)
         check_disk_space(str(raw_base))
 
         # ---- create batch ----
@@ -438,7 +452,8 @@ def submit(
 
         # ---- stream-copy to raw/<tag>/<module> ----
         raw_run_dir = raw_base / tag / module
-        _ensure_dir(raw_run_dir, Path(config.repository_root).resolve())
+        _ensure_dir(raw_run_dir, Path(config.repository_root).resolve(),
+                     shared_group_gid=shared_gid)
 
         total_size = sum(os.path.getsize(f) for f in source_files)
 
@@ -460,7 +475,8 @@ def submit(
                              blake3_hash="",
                              source_size=src_stat.st_size,
                              source_mtime=src_stat.st_mtime)
-            file_size, blake3_hex = streaming_copy(src, str(dest_path))
+            file_size, blake3_hex = streaming_copy(src, str(dest_path),
+                                                      shared_group_gid=shared_gid)
             storage.update_file_raw(batch_uuid, src, str(dest_path), file_size, blake3_hex)
 
             _step("Copying", f"{src_path.name} ({file_size} bytes)")
@@ -515,7 +531,8 @@ def submit(
         # ---- atomic move to ready + chmod ----
         _step("Delivering", f"Moving to ready/{tag}/{module}", advance=False)
         ready_tag_dir = config.ready_dir() / tag / module
-        _ensure_dir(ready_tag_dir, Path(config.repository_root).resolve())
+        _ensure_dir(ready_tag_dir, Path(config.repository_root).resolve(),
+                     shared_group_gid=shared_gid)
 
         # Cache raw hashes before os.replace (raw files will be gone after move)
         raw_hashes: dict = {}
@@ -557,7 +574,8 @@ def submit(
                     Path(config.outgoing_root.format(user=username, module=module)) / ".ddm_submit.log",
                     f"submit  tag={tag}  module={module}  user={username}  "
                     f"files={len(source_files)}  size={total_size}  uuid={batch_uuid[:8]}  "
-                    f"summary={summary or '-'}"
+                    f"summary={summary or '-'}",
+                    shared_group_gid=shared_gid,
                 )
             except OSError as e:
                 logger.warning(f"Failed to write submit log (non-fatal): {e}")
@@ -686,6 +704,9 @@ def release(
     6. Update status to RELEASED, update @latest symlink
     7. Release global lock
     """
+    # Resolve shared-group GID once for all directory/file permission fixes
+    shared_gid = config.shared_group_gid
+
     if tag not in VALID_TAGS:
         return ReleaseResult(False, f"Invalid tag: {tag}")
 
@@ -811,7 +832,8 @@ def release(
             logger.warning(msg)
 
     try:
-        _acquire_lock(rlock, f"Tag [{tag}] Release 进行中")
+        _acquire_lock(rlock, f"Tag [{tag}] Release 进行中",
+                       shared_group_gid=shared_gid)
     except LockError as e:
         return ReleaseResult(False, f"Tag [{tag}] 正在 Release，发布被阻断 ({e})")
 
@@ -820,7 +842,7 @@ def release(
         import uuid as _uuid
         repo_root = Path(config.repository_root).resolve()
         staging_dir = config.release_dir() / tag / f".staging_{version}_{_uuid.uuid4().hex[:8]}"
-        _ensure_dir(staging_dir, repo_root)
+        _ensure_dir(staging_dir, repo_root, shared_group_gid=shared_gid)
 
         # Map: (batch_uuid, ready_path) -> staging_path for cross-pass lookup
         staging_map: dict = {}
@@ -838,7 +860,7 @@ def release(
                 # Classify into group subdirectory (e.g. "verilog", "gds")
                 group = config.classify_file(fname, batch_module)
                 dest_dir = staging_dir / group if group else staging_dir
-                _ensure_dir(dest_dir, repo_root)
+                _ensure_dir(dest_dir, repo_root, shared_group_gid=shared_gid)
                 sp = str(dest_dir / fname)
                 shutil.copy2(ready_path, sp)
                 os.chmod(sp, SHARED_FILE_PERMS)
@@ -869,7 +891,7 @@ def release(
                         continue  # this module is being updated — skip
                     group = config.classify_file(f.name, mod_name) if mod_name else ""
                     dest_dir = staging_dir / group if group else staging_dir
-                    _ensure_dir(dest_dir, repo_root)
+                    _ensure_dir(dest_dir, repo_root, shared_group_gid=shared_gid)
                     dest_path = str(dest_dir / f.name)
                     shutil.copy2(str(f), dest_path)
                     os.chmod(dest_path, SHARED_FILE_PERMS)
@@ -982,7 +1004,8 @@ def release(
                 config.release_dir() / tag / ".ddm_release.log",
                 f"release  tag={tag}  version={version}  user={username}  "
                 f"files={total_files}  batches={len(batches)}  "
-                f"modules={sorted(set(b['module'] for b in batches))}"
+                f"modules={sorted(set(b['module'] for b in batches))}",
+                shared_group_gid=shared_gid,
             )
         except OSError as e:
             logger.warning(f"Failed to write release log (non-fatal): {e}")

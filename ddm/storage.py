@@ -93,9 +93,14 @@ CREATE INDEX IF NOT EXISTS idx_events_batch     ON events(batch_uuid);
 class Storage:
     """Encapsulates all SQLite CRUD for DDM state tracking."""
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, shared_group_name: str = "staff"):
         self.db_path = db_path
+        self._shared_group_name = shared_group_name
+        # Resolve GID (may raise KeyError if group does not exist)
+        import grp as _grp
+        self._shared_group_gid = _grp.getgrnam(shared_group_name).gr_gid
         os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
+        self._fix_db_dir_permissions()
         self._init_db()
 
     # ------------------------------------------------------------------
@@ -129,14 +134,43 @@ class Storage:
         is_new = not os.path.exists(self.db_path)
         with self._tx() as conn:
             conn.executescript(DDL)
-        # Ensure DB file is group-readable (only owner can chmod)
+        # Always refresh permissions — covers the first-creation case *and*
+        # the case where a previous creator's chown/chmod was silently skipped.
+        self._fix_db_permissions()
         if is_new:
+            logger.info(f"Database created at {self.db_path}")
+        else:
+            logger.info(f"Database initialized at {self.db_path}")
+
+    def _fix_db_dir_permissions(self):
+        """Ensure the database parent directory has shared-group ownership + SGID."""
+        db_dir = os.path.dirname(self.db_path) or "."
+        if not os.path.isdir(db_dir):
+            return
+        try:
+            os.chown(db_dir, -1, self._shared_group_gid)
+        except (PermissionError, OSError):
+            pass
+        try:
+            os.chmod(db_dir, 0o2775)
+        except (PermissionError, OSError):
+            pass
+
+    def _fix_db_permissions(self):
+        """Ensure DB file and WAL/SHM companions are group-owned and writable."""
+        gid = self._shared_group_gid
+        for suffix in ("", "-wal", "-shm"):
+            path = self.db_path + suffix
+            if not os.path.exists(path):
+                continue
             try:
-                import os as _os
-                _os.chmod(self.db_path, 0o664)
+                os.chown(path, -1, gid)
             except (PermissionError, OSError):
                 pass
-        logger.info(f"Database initialized at {self.db_path}")
+            try:
+                os.chmod(path, 0o664)
+            except (PermissionError, OSError):
+                pass
 
     # ------------------------------------------------------------------
     # batches

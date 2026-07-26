@@ -18,7 +18,7 @@ modules:
   SPI:
     owners: [w00888888]
   CPU:
-    owners: [w00949819, zhangsan]
+    owners: [w00949819, l00949820]
   DDR:
     owners: [lisi, l00949820]
 admins:
@@ -57,10 +57,10 @@ stale_lock_minutes: 14
 outgoing_root: /home/{user}/a0.outgoing/{module}
 
 # 运行时仓库根目录
-repository_root: ./repository
+repository_root: /tmp/ddm_test/repository
 
 # 日志目录
-log_dir: ./logs
+log_dir: /tmp/ddm_test/logs
 
 # 默认 tag 配置 —— 所有模块自动继承
 #

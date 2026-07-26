@@ -77,9 +77,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 DDM_ROOT="$SCRIPT_DIR"
 
+# When called by ddm_update.csh, DDM_LINK is the stable symlink path (e.g. ~/ddm).
+# setup_user.sh will embed this stable path so users don't need to re-run it
+# after every update — only the symlink target changes.
+STABLE_ROOT="${DDM_LINK:-$DDM_ROOT}"
+# Ensure it is always absolute — "source <path>" in .cshrc won't work
+# from arbitrary directories otherwise.
+case "$STABLE_ROOT" in
+    /*) ;;                              # already absolute
+    *) STABLE_ROOT="$PWD/$STABLE_ROOT" ;; # make absolute
+esac
+
 echo "============================================"
 echo "  DDM 部署脚本 (共享 venv)"
-echo "  DDM_ROOT = $DDM_ROOT"
+echo "  DDM_ROOT    = $DDM_ROOT"
+if [ -n "$DDM_LINK" ]; then
+    echo "  stable link = $DDM_LINK"
+fi
 echo "============================================"
 echo ""
 
@@ -159,11 +173,29 @@ fi
 cat > "$DDM_ROOT/setup_user.sh" << 'USER_SETUP'
 #!/bin/bash
 # Run ONCE per user to configure their tcsh for DDM
-DDM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# DDM_ROOT is embedded at install time — uses the stable symlink path
+# when deployed via ddm_update.csh, so users don't need to re-run setup
+# after every update.
+DDM_ROOT="__STABLE_ROOT__"
 
 echo "=== DDM User Setup (venv) ==="
 echo "  DDM_ROOT = $DDM_ROOT"
 echo ""
+
+CURRENT_DDM=$(grep "DDM" ~/.cshrc 2>/dev/null | grep "$DDM_ROOT" || true)
+if [ -z "$CURRENT_DDM" ] && grep -q "DDM" ~/.cshrc 2>/dev/null; then
+    echo "  ~/.cshrc has an OLD DDM path (different from current)."
+    echo "  Old entries:"
+    grep "DDM" ~/.cshrc | sed 's/^/    /'
+    echo ""
+    echo "  Remove old block and re-add? [y/N] "
+    read answer
+    if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+        # Remove old DDM block (lines between "# ===== DDM" and next blank line)
+        perl -i -ne 'if (/^# ===== DDM/){$skip=1; next} if($skip && /^$/){$skip=0; next} print unless $skip' ~/.cshrc
+        grep -q "DDM" ~/.cshrc 2>/dev/null || true  # refresh
+    fi
+fi
 
 if ! grep -q "DDM" ~/.cshrc 2>/dev/null; then
     cat >> ~/.cshrc << 'CSHRC'
@@ -176,9 +208,11 @@ alias ddm 'python3 -m ddm'
 if (-f CSHRC_DDM_ROOT/ddm.complete.csh) source CSHRC_DDM_ROOT/ddm.complete.csh
 CSHRC
     sed -i "s|CSHRC_DDM_ROOT|$DDM_ROOT|g" ~/.cshrc
-    echo "  ~/.cshrc 已配置"
+    echo "  ~/.cshrc 已配置 (stable path: $DDM_ROOT)"
+elif grep -q "$DDM_ROOT" ~/.cshrc 2>/dev/null; then
+    echo "  ~/.cshrc already points to current DDM — nothing to do."
 else
-    echo "  ~/.cshrc 已有 DDM 配置，跳过"
+    echo "  ~/.cshrc has DDM config but it was not updated (manual check needed)."
 fi
 
 echo ""
@@ -186,6 +220,7 @@ echo "=== Done ==="
 echo "  source ~/.cshrc  (或重新登录)"
 echo "  ddm check"
 USER_SETUP
+sed -i "s|__STABLE_ROOT__|$STABLE_ROOT|g" "$DDM_ROOT/setup_user.sh"
 chmod +x "$DDM_ROOT/setup_user.sh"
 
 # ---- Done ----
