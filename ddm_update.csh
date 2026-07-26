@@ -66,9 +66,10 @@ while ($#argv > 0)
     shift
 end
 
-# Resolve INSTALL_DIR to an absolute path so .cshrc gets an
-# absolute "source" line that works from any directory.
-set INSTALL_DIR = `readlink -f "$INSTALL_DIR"`
+# Resolve INSTALL_DIR to an absolute path WITHOUT following the
+# final symlink (unlike readlink -f).  "source" in .cshrc must
+# reference the stable link, not the versioned target directory.
+set INSTALL_DIR = `python3 -c "import os; print(os.path.abspath('$INSTALL_DIR'))"`
 
 # 管理数据放在 install_dir 同级 .ddm/ 下
 # 如果 dirname 是 / (root)，改用 /tmp/.ddm/
@@ -124,7 +125,11 @@ if ($rollback) then
     rm -f "$DDM_LINK"
     ln -sfn "$RELEASES/$prev" "$DDM_LINK"
     echo "完成。当前版本: $prev"
-    python3 -m ddm check
+    if (-x "$DDM_LINK/venv/bin/python3") then
+        "$DDM_LINK/venv/bin/python3" -m ddm check
+    else
+        python3 -m ddm check
+    endif
     exit 0
 endif
 
@@ -250,7 +255,7 @@ endif
 
 # ---- Step 7: 原子切换 ----
 if (-l "$DDM_LINK" || -e "$DDM_LINK") then
-    rm -f "$DDM_LINK"
+    rm -rf "$DDM_LINK"
 endif
 ln -sfn "$deploy_dir" "$DDM_LINK"
 
@@ -262,7 +267,11 @@ echo ""
 
 # ---- Step 8: 验证 ----
 echo "--- ddm check ---"
-python3 -m ddm check
+if (-x "$deploy_dir/venv/bin/python3") then
+    "$deploy_dir/venv/bin/python3" -m ddm check
+else
+    python3 -m ddm check
+endif
 if ($status == 0) then
     echo ""
     echo "✓ 验证通过"
