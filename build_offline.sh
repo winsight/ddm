@@ -201,10 +201,9 @@ if ! grep -q "DDM" ~/.cshrc 2>/dev/null; then
     cat >> ~/.cshrc << 'CSHRC'
 
 # ===== DDM (shared venv) =====
-# Clear any old DDM paths to avoid conflicts
-unsetenv PYTHONPATH
-source CSHRC_DDM_ROOT/venv/bin/activate.csh
-alias ddm 'python3 -m ddm'
+# Uses the venv Python directly — no "source activate" needed.
+# This keeps your shell environment (PATH, prompt) untouched.
+alias ddm 'CSHRC_DDM_ROOT/venv/bin/python3 -m ddm'
 if (-f CSHRC_DDM_ROOT/ddm.complete.csh) source CSHRC_DDM_ROOT/ddm.complete.csh
 CSHRC
     sed -i "s|CSHRC_DDM_ROOT|$DDM_ROOT|g" ~/.cshrc
