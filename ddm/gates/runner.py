@@ -14,6 +14,7 @@ Supports a progress callback for Rich progress bar integration.
 from __future__ import annotations
 
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -68,8 +69,14 @@ def run_gates(
         logger.info(f"Running gate '{gate.name}': {gate.command}")
         t0 = time.time()
         try:
+            # Use sys.executable so gates always run with the same Python
+            # that is running DDM — critical when .cshrc uses the minimal
+            # alias approach (no venv activation, no PATH modification).
+            cmd_parts = gate.command.split()
+            if cmd_parts and cmd_parts[0] in ("python", "python3"):
+                cmd_parts[0] = sys.executable
             proc = subprocess.run(
-                gate.command.split() + [str(raw_path), module, tag],
+                cmd_parts + [str(raw_path), module, tag],
                 capture_output=True,
                 text=True,
                 timeout=timeout,
