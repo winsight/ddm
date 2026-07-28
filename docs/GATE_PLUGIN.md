@@ -5,17 +5,22 @@ DDM 的门禁（Gate）系统在 `submit` 流程中，文件从 `a0.outgoing/` �
 ## 目录
 
 - [快速开始：新增一个 Python 门禁](#快速开始新增一个-python-门禁)
+- [完整实例：file_freshness 门禁](#完整实例file_freshness-门禁)
+  - [Python 版本](#python-版本)
+  - [Bash 版本](#bash-版本)
+  - [CSH/tcsh 版本](#cshtcsh-版本)
+  - [配置注册](#配置注册)
+  - [测试方法](#测试方法)
 - [接口规范](#接口规范)
   - [命令行参数](#命令行参数)
   - [返回值协议](#返回值协议)
+  - [runner 如何调用外部脚本](#runner-如何调用外部脚本)
   - [stdout / stderr](#stdout--stderr)
   - [超时](#超时)
-- [对接外部脚本](#对接外部脚本)
-  - [方式 A：直接调用 (exit code)](#方式-a直接调用-exit-code)
-  - [方式 B：Flag 文件协议](#方式-bflag-文件协议)
-  - [方式 C：LSF/Grid 集群提交](#方式-clsfgrid-集群提交)
-- [配置参考](#配置参考)
+- [Flag 文件协议（异步 / 集群场景）](#flag-文件协议异步--集群场景)
+- [LSF/Grid 集群提交](#lsfgrid-集群提交)
 - [调试技巧](#调试技巧)
+- [注意事项汇总](#注意事项汇总)
 
 ---
 
@@ -60,12 +65,8 @@ defaults:
   tag:
     PV_ITER:
       gates:
-        # 已有的 gate
         - name: verilog_syntax_check
           command: python3 -m ddm.gates.verilog_check
-        - name: drc_baseline_check
-          command: python3 -m ddm.gates.drc_check
-        # 新增的 gate
         - name: power_integrity_check
           command: python3 -m ddm.gates.power_check
 ```
@@ -75,7 +76,260 @@ defaults:
 
 ### Step 3 — 完成
 
-无需重启服务。下次 `ddm submit` 时新 gate 自动生效。
+```bash
+ddm submit -m CPU -t PV_ITER    # 新 gate 自动生效，无需重启
+```
+
+---
+
+## 完整实例：file_freshness 门禁
+
+功能：检查一次提交中所有文件的 mtime 是否在 N 小时内。有 stale 文件则阻断提交，全部 fresh 则放行。
+
+### Python 版本
+
+`ddm/gates/file_freshness.py`：
+
+```python
+"""File freshness gate — reject files whose mtime is older than N hours."""
+import sys
+import time
+from pathlib import Path
+
+MAX_AGE_HOURS = 2.0    # 超过此时间的文件视为 stale
+
+def _fmt_age(seconds: float) -> str:
+    if seconds < 60:       return f"{seconds:.0f}s"
+    elif seconds < 3600:   return f"{seconds / 60:.1f}m"
+    else:                  return f"{seconds / 3600:.1f}h"
+
+def main():
+    raw_dir = Path(sys.argv[1])
+    module  = sys.argv[2]
+    tag     = sys.argv[3]
+
+    deadline = time.time() - MAX_AGE_HOURS * 3600
+    files = sorted(f for f in raw_dir.rglob("*") if f.is_file())
+
+    if not files:
+        print(f"No files found in {raw_dir}")
+        sys.exit(1)
+
+    print(f"Checking {len(files)} file(s) for {module}/{tag}")
+    print(f"  max age: {MAX_AGE_HOURS}h  "
+          f"(deadline: {time.strftime('%H:%M:%S', time.localtime(deadline))})")
+    print()
+
+    stale = []
+    ok = 0
+    for f in files:
+        mtime = f.stat().st_mtime
+        age = time.time() - mtime
+        status = "OK" if mtime >= deadline else "STALE"
+        print(f"  [{status}] {f.name:30s}  "
+              f"mtime={time.strftime('%H:%M:%S', time.localtime(mtime))}  "
+              f"age={_fmt_age(age)}")
+        if mtime >= deadline:
+            ok += 1
+        else:
+            stale.append((f.name, _fmt_age(age)))
+
+    print()
+    print(f"  fresh: {ok}  stale: {len(stale)}")
+
+    if stale:
+        print(f"FAIL: {len(stale)} file(s) older than {MAX_AGE_HOURS}h:")
+        for name, age in stale:
+            print(f"       {name} ({age} old)")
+        sys.exit(1)
+    else:
+        print(f"PASS: all {ok} file(s) within {MAX_AGE_HOURS}h window")
+        sys.exit(0)
+
+if __name__ == "__main__":
+    main()
+```
+
+配置：
+```yaml
+gates:
+  - name: file_freshness
+    command: python3 -m ddm.gates.file_freshness
+```
+
+`MAX_AGE_HOURS` 可以按需调整（比如测试时设成 `0.01` = 36 秒，方便制造 stale 场景）。
+
+### Bash 版本
+
+`ddm/gates/file_freshness.sh`：
+
+```bash
+#!/bin/bash
+# File freshness gate — standalone shell version.
+set -e
+
+RAW_DIR="$1"; MODULE="$2"; TAG="$3"
+MAX_HOURS=2
+DEADLINE=$(python3 -c "import time; print(time.time() - ${MAX_HOURS} * 3600)")
+
+echo "Checking file freshness for ${MODULE}/${TAG}"
+echo "  max age: ${MAX_HOURS}h"; echo ""
+
+STALE=0; OK=0
+
+while IFS= read -r -d '' f; do
+    MTIME=$(python3 -c "import os; print(os.path.getmtime('$f'))")
+    AGE=$(python3 -c "import time; print(int(time.time() - $MTIME))")
+    FNAME=$(basename "$f")
+
+    if python3 -c "exit(0 if $MTIME >= $DEADLINE else 1)"; then
+        echo "  [OK]    $FNAME  age=${AGE}s"; OK=$((OK + 1))
+    else
+        H=$(python3 -c "print(f'{$AGE / 3600:.1f}h')")
+        echo "  [STALE] $FNAME  age=$H"; STALE=$((STALE + 1))
+    fi
+done < <(find "$RAW_DIR" -type f -print0)
+
+echo ""; echo "  fresh: $OK  stale: $STALE"
+
+if [ "$STALE" -gt 0 ]; then
+    echo "FAIL: $STALE file(s) older than ${MAX_HOURS}h"; exit 1
+else
+    echo "PASS: all files within ${MAX_HOURS}h window"; exit 0
+fi
+```
+
+### CSH/tcsh 版本
+
+`ddm/gates/file_freshness.csh`：
+
+```csh
+#!/bin/csh -f
+# File freshness gate — tcsh/csh version.
+
+set raw_dir  = "$1"
+set module   = "$2"
+set tag      = "$3"
+set max_h    = 2
+
+set deadline = `python3 -c "import time; print(time.time() - ${max_h} * 3600)"`
+
+echo "Checking file freshness for ${module}/${tag}  (max age: ${max_h}h)"
+echo ""
+
+set stale = 0
+set ok    = 0
+
+foreach f (`find "$raw_dir" -type f`)
+    set fname   = `basename "$f"`
+    set mtime   = `python3 -c "import os; print(os.path.getmtime('$f'))"`
+    set age_sec = `python3 -c "import time; print(int(time.time() - $mtime))"`
+
+    if (`python3 -c "print(1 if $mtime >= $deadline else 0)"` == 1) then
+        echo "  [OK]    ${fname}  age=${age_sec}s"
+        @ ok++
+    else
+        set age_h = `python3 -c "print(f'{$age_sec / 3600:.1f}h')"`
+        echo "  [STALE] ${fname}  age=${age_h}"
+        @ stale++
+    endif
+end
+
+echo ""
+echo "  fresh: $ok  stale: $stale"
+
+if ($stale > 0) then
+    echo "FAIL: $stale file(s) older than ${max_h}h"
+    exit 1
+else
+    echo "PASS: all $ok file(s) within ${max_h}h window"
+    exit 0
+endif
+```
+
+CSH 脚本需要通过 **shebang** 让 OS 选择解释器（`#!/bin/csh -f`）。runner 不会对 CSH 脚本做 `sys.executable` 替换（只对 `python`/`python3` 开头的 command 做替换）。
+
+### 配置注册
+
+在 `config.yaml` 中三种方式任选：
+
+```yaml
+defaults:
+  tag:
+    PV_ITER:
+      gates:
+        # ---- Python 模块 gate ----
+        - name: file_freshness
+          command: python3 -m ddm.gates.file_freshness
+
+        # ---- Bash 外部脚本 ----
+        - name: file_freshness
+          command: /path/to/ddm/gates/file_freshness.sh
+
+        # ---- CSH 外部脚本 ----
+        - name: file_freshness
+          command: /path/to/ddm/gates/file_freshness.csh
+```
+
+### 测试方法
+
+#### 1. 手动直接测试（模拟 runner 调用，调试时最常用）
+
+Runner 实际拼接的命令是 `<command> <raw_dir> <module> <tag>`：
+
+```bash
+# 准备测试数据
+mkdir -p /tmp/gate_test
+touch /tmp/gate_test/fresh.v.gz
+touch -t 202601010000 /tmp/gate_test/old.v.gz   # 造一个 stale 文件
+
+# Python 版本
+python3 -m ddm.gates.file_freshness /tmp/gate_test CPU PV_ITER
+echo "exit: $?"       # 0 = PASS, 1 = FAIL
+
+# Bash 版本
+bash /path/to/ddm/gates/file_freshness.sh /tmp/gate_test CPU PV_ITER
+echo "exit: $?"
+
+# CSH 版本
+csh /path/to/ddm/gates/file_freshness.csh /tmp/gate_test CPU PV_ITER
+echo "exit: $?"
+```
+
+#### 2. 完整 submit 测试
+
+```bash
+# 刷新源文件时间戳（streaming_copy 保留 mtime，所以源文件必须新鲜）
+touch ~/a0.outgoing/CPU/*
+
+# 提交流程 → runner → gate 子进程
+ddm submit -m CPU -t PV_ITER
+```
+
+输出中会看到：
+```
+Gates file_freshness ✓ (0.1s)    ← PASS
+Gates file_freshness ✗           ← FAIL
+```
+
+#### 3. 查看 gate 日志
+
+```bash
+grep "gate\|file_freshness\|stale\|Stale" logs/ddm_*.log
+```
+
+#### 4. 查看 SQLite 事件
+
+```bash
+sqlite3 repository/ddm.db \
+  "SELECT batch_uuid, event_type, substr(message,1,150)
+   FROM events WHERE event_type LIKE '%gate%'
+   ORDER BY created_at DESC LIMIT 10;"
+```
+
+#### 5. 调试 stderr
+
+Runner 捕获子进程的 stderr，在 gate 失败时把前 200 字符写入 `EVENT_GATE_FAIL` 事件。如果 CSH 脚本报错，stderr 会出现在 SQLite events 表和日志中。
 
 ---
 
@@ -83,7 +337,7 @@ defaults:
 
 ### 命令行参数
 
-Runner 拼接的实际命令是：
+Runner 拼接的实际命令：
 
 ```
 <command> <raw_dir> <module> <tag>
@@ -92,196 +346,148 @@ Runner 拼接的实际命令是：
 例如：
 
 ```
-python3 -m ddm.gates.verilog_check /nfs/ddm/repository/raw/PV_ITER/CPU CPU PV_ITER
+python3 -m ddm.gates.file_freshness /nfs/ddm/repository/raw/PV_ITER/CPU CPU PV_ITER
+/bin/csh /path/to/script.csh /nfs/ddm/repository/raw/PV_ITER/CPU CPU PV_ITER
 ```
 
-| 参数 | 含义 | 示例 |
-|------|------|------|
-| `sys.argv[1]` / `$1` | raw 目录的绝对路径 | `/nfs/ddm/repository/raw/PV_ITER/CPU` |
-| `sys.argv[2]` / `$2` | 模块名 | `CPU` |
-| `sys.argv[3]` / `$3` | tag 名 | `PV_ITER` |
-
-> **注意**：`sys.executable` 替换：如果 command 以 `python` 或 `python3` 开头，runner 会自动替换为运行 DDM 本身的 Python 解释器。这意味着你不需要 activate venv —— gate 始终使用和 DDM 相同的 Python。
+| 参数位置 | 变量名 | 含义 | 示例 |
+|----------|--------|------|------|
+| 第 1 个 | `$1` / `sys.argv[1]` | raw 目录的绝对路径 | `/nfs/.../raw/PV_ITER/CPU` |
+| 第 2 个 | `$2` / `sys.argv[2]` | 模块名 | `CPU` |
+| 第 3 个 | `$3` / `sys.argv[3]` | tag 名 | `PV_ITER` |
 
 ### 返回值协议
 
-Runner 支持三种判定规则，按优先级排列：
+Runner 的判定优先级（从高到低）：
 
-#### 1. Exit Code（默认、最简单）
+#### 1. Flag 文件（最高优先级，见下文）
+
+`raw_dir/.ddm_gate_<name>` 或 `raw_dir/.ddm_gate_<name>.json` 第一行（/JSON 字段）决定结果，覆盖 exit code。
+
+#### 2. Exit Code（默认）
 
 ```
 exit 0  → PASS
 exit ≠0 → FAIL
 ```
 
-Python 脚本 `sys.exit(0)` 或正常结束 → PASS；`sys.exit(1)` 或其他非零值 → FAIL。Runner 会捕获 stdout/stderr 并用 return code 判定。
+Python: `sys.exit(0)` → PASS；非零 → FAIL。
+CSH/Bash: `exit 0` → PASS；非零 → FAIL。
 
-#### 2. stdout 末行匹配（精确控制）
+### runner 如何调用外部脚本
 
-如果你想更精确地控制判定（例如 exit code 始终为 0 但要根据输出内容判定），可以在脚本最后一行输出特殊标记：
+```python
+# runner.py 核心逻辑 (简化)
+cmd_parts = gate.command.split()           # e.g. ['/path/to/script.csh']
 
+# 只有 python/python3 开头才替换为 sys.executable
+if cmd_parts and cmd_parts[0] in ("python", "python3"):
+    cmd_parts[0] = sys.executable          # → /path/to/venv/bin/python3
+
+proc = subprocess.run(
+    cmd_parts + [raw_dir, module, tag],    # 追加 3 个参数
+    capture_output=True, text=True,
+    timeout=300,
+)
+passed = proc.returncode == 0
+
+# 然后检查 flag 文件（可选覆盖）
+passed, msg = _check_flag_file(raw_dir, gate.name, passed)
 ```
-__DDM_RESULT__: PASS  或  __DDM_RESULT__: FAIL
-```
 
-Runner 优先检查 stdout 最后一行是否包含此模式。这在你需要区分 "脚本本身成功但检查失败" 的场景时很有用。
+**关键点**：
 
-#### 3. Flag 文件（跨进程 / 长时间任务，见下文）
+| command 开头 | 行为 |
+|-------------|------|
+| `python` / `python3` | runner 替换为 `sys.executable`（venv 的 Python） |
+| `/path/to/script` | 不做替换，依赖 shebang（`#!/bin/csh -f` 等） |
+| `bash script.sh` | bash 走 `PATH` 查找，不替换 |
+
+对于 CSH 脚本，推荐写法：用绝对路径，shebang 声明 `#!/bin/csh -f`，runner 当作普通可执行文件调用。
 
 ### stdout / stderr
 
-- **stdout**：自定义输出，runner 会记录到日志。建议输出检查摘要、文件数、关键指标。
-- **stderr**：前 200 字符会在 gate 失败时写入 SQLite events 表（`EVENT_GATE_FAIL`）。
+- **stdout**：子进程全部 stdout 被 runner 捕获，写入日志。gate PASS 时不显示在终端，FAIL 时 stderr 前 200 字符写入事件表。
+- **stderr**：gate 失败时写入 `EVENT_GATE_FAIL` 事件。CSH 脚本的 `echo` 输出到 stdout，`echo "error" >&2` 输出到 stderr。
 
 ### 超时
 
-默认每个 gate 超时 300 秒（5 分钟）。超过则判定 FAIL。可以在 runner 调用时配置：
+默认每个 gate 300 秒（5 分钟），超过则判定 FAIL。可在 `run_gates()` 调用时配置：
 
 ```python
-run_gates(gate_defs, raw_dir, module, tag, timeout=600)  # 10 分钟
+run_gates(gate_defs, raw_dir, module, tag, timeout=600)
 ```
 
 ---
 
-## 对接外部脚本
+## Flag 文件协议（异步 / 集群场景）
 
-### 方式 A：直接调用 (exit code)
+适用于：脚本提交 LSF 任务后立即返回，实际检查结果由后续流程通过 flag 文件传递。
 
-适用于：**独立的本地脚本，可以同步跑完，用 exit code 表达结果**。
+### 协议规则
 
-```yaml
-gates:
-  - name: custom_drc
-    command: /eda/scripts/run_drc.csh
+1. Gate 脚本（或后续检查任务）在 `raw_dir` 下生成 flag 文件
+2. 文件名约定：`.ddm_gate_<gate_name>`（纯文本）或 `.ddm_gate_<gate_name>.json`（JSON）
+3. Runner 在子进程退出后检查 flag 文件，存在则覆盖 exit code 判定
+
+### 纯文本格式
+
 ```
-
-`run_drc.csh` 接收 3 个参数：
+.ddm_gate_<name> → 第一行以 "PASS" 或 "FAIL" 开头
+```
 
 ```csh
 #!/bin/csh -f
 set raw_dir = $1
-set module  = $2
-set tag     = $3
-
-cd $raw_dir
-# ... 执行 DRC 检查 ...
-if ($status == 0) then
-    exit 0   # PASS
-else
-    exit 1   # FAIL
-endif
-```
-
-**注意事项**：
-- Runner 会 `capture_output=True`，stdout/stderr 被捕获，不会直接打印到终端
-- 脚本里如果有 `setenv`、`module load` 等环境操作，需要在脚本内部完成（子进程环境隔离）
-- `sys.executable` 替换只对以 `python`/`python3` 开头的 command 生效，对 `/path/to/script.csh` 不替换
-
-### 方式 B：Flag 文件协议
-
-适用于：**长时间任务、提交到集群的任务、或者脚本和 gate 在不同环境运行**。
-
-#### 协议规则
-
-1. Gate 脚本在运行结束时，在 `raw_dir` 下生成一个 flag 文件
-2. Flag 文件名约定：`.ddm_gate_<gate_name>` 或 `.ddm_gate_<gate_name>.json`
-3. Runner 检查 flag 文件内容判定结果
-
-#### 简单 Flag 文件
-
-```
-协议：
-  .ddm_gate_<name>     → 内容为 "PASS" 或 "FAIL\n<reason>"
-  .ddm_gate_<name>.json → {"status": "pass|fail", "reason": "...", "metrics": {...}}
-```
-
-**CSH 示例**：
-
-```csh
-#!/bin/csh -f
-set raw_dir = $1
-set module  = $2
-set tag     = $3
 set flag    = "$raw_dir/.ddm_gate_custom_drc"
 
-# 提交到 LSF
-set job_id = `bsub -q normal -J drc_${module} run_drc.csh $raw_dir $module $tag | awk '{print $2}' | sed 's/[<>]//g'`
-echo "Job submitted: $job_id"
-echo "PASS" > $flag               # 提交成功即 PASS（异步检查）
+# 提交 LSF 任务
+bsub -q normal -J drc_task /path/to/run_drc.csh $raw_dir $2 $3
+echo "PASS" > $flag       # 提交成功即放行
 exit 0
 ```
 
-**Python 封装（推荐）**：
+### JSON 格式（含指标）
 
-```python
-# ddm/gates/lsf_drc_check.py
-"""提交 DRC 到 LSF，写 flag 文件表示提交成功。
-实际检查结果由后续的 release 阶段验证。
-"""
-import sys, json, subprocess
-from pathlib import Path
-
-def main():
-    raw_dir = Path(sys.argv[1])
-    module  = sys.argv[2]
-    tag     = sys.argv[3]
-    flag_file = raw_dir / f".ddm_gate_lsf_drc"
-
-    # 提交 bsub
-    result = subprocess.run(
-        ["bsub", "-q", "normal", "-J", f"drc_{module}",
-         "/path/to/run_drc.csh", str(raw_dir), module, tag],
-        capture_output=True, text=True, timeout=30
-    )
-
-    if result.returncode != 0:
-        flag_file.write_text(f"FAIL\nLSF submit error: {result.stderr}")
-        sys.exit(1)
-
-    job_id = result.stdout.strip().split()[1].lstrip("<").rstrip(">")
-    print(f"DRC submitted: LSF job {job_id}")
-    flag_file.write_text(f"PASS\nLSF job: {job_id}")
-    sys.exit(0)
-
-if __name__ == "__main__":
-    main()
-```
-
-#### JSON Flag 文件（含指标）
-
-```python
-flag = {
-    "status": "pass",
-    "reason": "DRC job bsub_12345 submitted",
-    "metrics": {
-        "lsf_job_id": "12345",
-        "queue": "normal",
-        "estimated_runtime": "2h"
-    }
+```json
+{
+  "status": "pass",
+  "reason": "LSF job 12345 completed successfully",
+  "metrics": {
+    "lsf_job_id": "12345",
+    "drc_violations": 0,
+    "runtime": "12m"
+  }
 }
-flag_file.write_text(json.dumps(flag, indent=2))
 ```
 
-### 方式 C：LSF/Grid 集群提交
+```python
+import json
+flag_file.write_text(json.dumps({
+    "status": "pass",
+    "reason": "All checks passed",
+    "metrics": {"violations": 0}
+}))
+```
 
-适用于：**检查本身需要大量计算资源，必须在集群上跑**。
+---
 
-#### 模式 1：提交即过（异步）
+## LSF/Grid 集群提交
+
+### 模式 1：提交即过（异步）
 
 ```yaml
 gates:
   - name: drc_submit
-    command: python3 -m ddm.gates.lsf_submit  # 只负责提交
-  # submit 通过后再由人工或 cron 验证实际结果
+    command: python3 -m ddm.gates.lsf_submit
 ```
 
-LSF 任务提交成功 → gate PASS。实际 DRC 结果由后续的 **release gate** 或人工 review 验证。
+Gate 脚本只负责提交 LSF 作业，提交成功 → flag 文件写 PASS → gate PASS。实际 DRC 结果由 release 阶段或人工验证。
 
-#### 模式 2：等待结果（同步/半同步）
+### 模式 2：轮询等待（同步/半同步）
 
 ```python
-# ddm/gates/lsf_wait_check.py
-"""提交 LSF 任务并等待完成，超时则 FAIL。"""
+# ddm/gates/lsf_wait_check.py — 提交并等待完成
 import sys, subprocess, time
 from pathlib import Path
 
@@ -290,92 +496,15 @@ def main():
     module  = sys.argv[2]
     tag     = sys.argv[3]
 
-    # 1. 提交任务
     proc = subprocess.run(
         ["bsub", "-q", "normal", "-J", f"drc_{module}",
          "/path/to/run_drc.csh", str(raw_dir), module, tag],
         capture_output=True, text=True
     )
     job_id = proc.stdout.strip().split()[1].lstrip("<").rstrip(">")
-    print(f"LSF job submitted: {job_id}")
+    print(f"LSF job {job_id} submitted")
 
-    # 2. 轮询状态（最多等 30 分钟）
-    deadline = time.time() + 1800
-    while time.time() < deadline:
-        check = subprocess.run(
-            ["bjobs", "-o", "stat", "-noheader", job_id],
-            capture_output=True, text=True
-        )
-        status = check.stdout.strip()
-        if status == "DONE":
-            print("DRC job completed successfully")
-            sys.exit(0)
-        elif status in ("EXIT", "UNKWN"):
-            print(f"DRC job failed with status: {status}")
-            sys.exit(1)
-        time.sleep(30)
-
-    print(f"Timeout: DRC job {job_id} still running")
-    sys.exit(1)
-
-if __name__ == "__main__":
-    main()
-```
-
-#### 通用 LSF 封装模板
-
-```python
-# ddm/gates/lsf_runner.py
-"""
-通用 LSF 门禁封装。
-在 config.yaml 中通过环境变量或额外参数配置 LSF 选项。
-
-用法:
-  python3 -m ddm.gates.lsf_runner <raw_dir> <module> <tag> \
-      --cmd "/eda/scripts/drc.sh" --queue normal --timeout 3600
-"""
-import sys, subprocess, time, argparse
-from pathlib import Path
-
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("raw_dir")
-    parser.add_argument("module")
-    parser.add_argument("tag")
-    parser.add_argument("--cmd", required=True)
-    parser.add_argument("--queue", default="normal")
-    parser.add_argument("--timeout", type=int, default=3600)
-    parser.add_argument("--wait", action="store_true",
-                        help="Wait for job completion")
-    return parser.parse_known_args()
-
-def main():
-    args, extra = parse_args()
-    raw_dir = Path(args.raw_dir)
-    module  = args.module
-    tag     = args.tag
-
-    # 构建 bsub 命令
-    bsub_cmd = [
-        "bsub", "-q", args.queue,
-        "-J", f"ddm_gate_{module}_{tag}",
-        "-o", str(raw_dir / ".lsf_%J.log"),
-    ] + extra + ["--"] + args.cmd.split() + [str(raw_dir), module, tag]
-
-    proc = subprocess.run(bsub_cmd, capture_output=True, text=True)
-    if proc.returncode != 0:
-        print(f"FAIL: bsub error\n{proc.stderr}")
-        sys.exit(1)
-
-    job_id = proc.stdout.strip().split()[1].lstrip("<").rstrip(">")
-    print(f"LSF job {job_id} submitted to queue '{args.queue}'")
-
-    if not args.wait:
-        print("Async mode: job submitted, check .lsf_*.log for results")
-        sys.exit(0)  # 提交成功即 PASS
-
-    # 同步等待
-    deadline = time.time() + args.timeout
+    deadline = time.time() + 1800    # 最多等 30 分钟
     while time.time() < deadline:
         check = subprocess.run(
             ["bjobs", "-o", "stat", "-noheader", job_id],
@@ -383,133 +512,47 @@ def main():
         )
         s = check.stdout.strip()
         if s == "DONE":
-            print(f"LSF job {job_id} DONE")
-            sys.exit(0)
+            print(f"Job {job_id} completed"); sys.exit(0)
         elif s in ("EXIT", "UNKWN"):
-            print(f"FAIL: LSF job {job_id} status={s}")
-            sys.exit(1)
-        time.sleep(15)
+            print(f"Job {job_id} failed: {s}"); sys.exit(1)
+        time.sleep(30)
 
-    print(f"FAIL: LSF job {job_id} timeout ({args.timeout}s)")
-    sys.exit(1)
+    print(f"Job {job_id} timeout"); sys.exit(1)
 
 if __name__ == "__main__":
     main()
 ```
 
-配置：
-
-```yaml
-gates:
-  - name: lsf_drc
-    command: python3 -m ddm.gates.lsf_runner --cmd /eda/scripts/drc.sh --wait
-```
-
----
-
-## 配置参考
-
-### config.yaml 完整示例
-
-```yaml
-defaults:
-  tag:
-    PV_ITER:
-      file_patterns:
-        - "{module}.v.gz"
-        - "{module}.v.pg"
-      gates:
-        # ---- Python 模块 gate ----
-        - name: verilog_syntax_check
-          command: python3 -m ddm.gates.verilog_check
-
-        # ---- 外部 Shell 脚本 ----
-        - name: custom_drc
-          command: /eda/scripts/run_drc.csh
-
-        # ---- LSF 异步提交 ----
-        - name: lsf_drc_submit
-          command: python3 -m ddm.gates.lsf_runner --cmd /eda/scripts/drc.sh
-
-        # ---- 带超时控制的 gate（在包裹脚本里实现） ----
-        - name: long_running_check
-          command: python3 -m ddm.gates.lsf_runner --cmd /eda/scripts/heavy.sh --wait --timeout 7200
-```
-
-### 注意事项
-
-| 项目 | 说明 |
-|------|------|
-| 执行顺序 | gates 按配置列表顺序**串行**执行 |
-| 短路 | 任一 gate FAIL 后，后续 gate **不再执行**，submit 整体失败 |
-| 环境 | 子进程继承父进程的环境变量，但 `PATH` 不会包含 venv |
-| 工作目录 | 子进程的 cwd 是 raw 目录（`raw/<tag>/<module>/`） |
-| python 路径 | `python3` 开头的 command 自动替换为 `sys.executable` |
-| 权限 | gate 以触发 submit 的用户的身份运行 |
-
 ---
 
 ## 调试技巧
 
-### 1. 手动测试 gate
+| 场景 | 命令 |
+|------|------|
+| 手动跑 gate | `python3 -m ddm.gates.<name> /tmp/test CPU PV_ITER` |
+| 手动跑 CSH gate | `csh /path/to/gate.csh /tmp/test CPU PV_ITER` |
+| 看 gate 日志 | `grep "gate\|Gate" logs/ddm_*.log` |
+| 看 gate 事件 | `sqlite3 repository/ddm.db "SELECT * FROM events WHERE event_type LIKE '%gate%' ORDER BY created_at DESC LIMIT 10;"` |
+| 测试 LSF | `which bsub && bsub -q normal -J test /path/to/script.sh /tmp/test CPU PV_ITER` |
+| 造 stale 文件 | `touch -t 202601010000 /tmp/test/old.v.gz` |
+| 刷新源文件 | `touch ~/a0.outgoing/CPU/*` |
 
-```bash
-# 模拟 runner 调用
-raw_dir="/nfs/ddm/repository/raw/PV_ITER/CPU"
-python3 -m ddm.gates.verilog_check "$raw_dir" CPU PV_ITER
-echo "exit code: $?"
-```
-
-### 2. 查看 gate 日志
-
-```bash
-# 日志在 <log_dir>/ddm_YYYY-MM-DD.log
-grep "gate\|Gate" logs/ddm_2026-07-26.log
-```
-
-### 3. 查看 gate 事件
-
-```bash
-# SQLite 中记录了每次 gate 的执行结果
-sqlite3 repository/ddm.db \
-  "SELECT batch_uuid, event_type, message, created_at
-   FROM events WHERE event_type LIKE '%gate%'
-   ORDER BY created_at DESC LIMIT 10;"
-```
-
-### 4. 添加 verbose 输出
-
-在 gate 脚本中，所有 print 到 stdout 的内容都会被 runner 捕获并记录到日志。可以放心加调试输出：
-
-```python
-print(f"DEBUG: raw_dir={raw_dir}")
-print(f"DEBUG: files={list(raw_dir.rglob('*'))}")
-```
-
-这些输出不会显示在 submit 的进度条中，但会被写入 `ddm_*.log`。
-
-### 5. 测试 LSF 集成
-
-```bash
-# 先确保 bsub 可用
-which bsub
-
-# 手动提交测试
-bsub -q normal -J test_gate /eda/scripts/run_drc.csh /tmp/test CPU PV_ITER
-
-# 检查作业状态
-bjobs -u $USER
-```
+> **关于 `touch`**：`streaming_copy` 用 `os.utime` 保留了源文件的 mtime。如果 `a0.outgoing` 里的文件创建时间很久，复制到 raw 后的文件 mtime 也会是旧的，file_freshness 会正确阻断。每次 submit 前 `touch` 一下源文件即可。
 
 ---
 
-## 常见 gate 模式
+## 注意事项汇总
 
-| 检查类型 | 实现方式 | 超时建议 |
-|----------|---------|----------|
-| 语法检查 | Python 脚本直接扫描文件 | 60s |
-| 完整性验证 | Python 脚本对比 hash/size | 120s |
-| DRC/LVS | LSF 提交 + flag 文件 | 3600s (异步) |
-| 功耗分析 | 外部工具 + exit code | 600s |
-| 时序检查 | LSF 提交 + 轮询等待 | 7200s |
-| 用户自定义 | 任意可执行文件 | 按需设置 |
+| 项目 | 说明 |
+|------|------|
+| 执行顺序 | gates 按配置列表顺序**串行**执行 |
+| 短路 | 任一 gate FAIL，后续 gate **不再执行**，submit 整体失败 |
+| 工作目录 | 子进程 cwd 是提交时的工作目录（非 raw 目录） |
+| python 路径 | `python3` 开头的 command → runner 自动替换为 `sys.executable` |
+| 外部脚本 | 非 python 开头 → 不做替换，需依赖 shebang 或系统 PATH |
+| CSH 脚本 | 推荐 `#!/bin/csh -f` shebang + 绝对路径 |
+| stdout | 子进程 stdout 被 runner 捕获，写入日志，不在终端显示 |
+| stderr | gate FAIL 时前 200 字符写入 `EVENT_GATE_FAIL` |
+| mtime | raw 文件的 mtime 来自 `streaming_copy` 的 `os.utime`（= 源文件 mtime） |
+| 环境变量 | 子进程继承父进程环境，但 venv 不在 PATH 中 |
+| 权限 | gate 以触发 submit 的用户身份运行 |

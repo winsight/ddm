@@ -8,7 +8,7 @@
 set raw_dir  = "$1"
 set module   = "$2"
 set tag      = "$3"
-set max_h    = 2
+set max_h    = 0.01
 
 set deadline = `python3 -c "import time; print(time.time() - ${max_h} * 3600)"`
 

@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 # ---- configurable ----
-MAX_AGE_HOURS = 2.0
+MAX_AGE_HOURS = 0.01
 # ---------------------
 
 def _fmt_age(seconds: float) -> str:

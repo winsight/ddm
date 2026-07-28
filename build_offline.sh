@@ -152,7 +152,7 @@ echo "  共享组: $SHARED_GRP"
 
 # Only set SGID on directories — file permissions are handled by DDM code.
 # Don't chmod -R existing files (they may belong to other users).
-for d in repository repository/raw repository/ready repository/release logs a0.outgoing; do
+for d in repository repository/raw repository/ready repository/release logs; do
     mkdir -p "$DDM_ROOT/$d"
     chgrp "$SHARED_GRP" "$DDM_ROOT/$d" 2>/dev/null || true
     chmod 2775 "$DDM_ROOT/$d" 2>/dev/null || true
