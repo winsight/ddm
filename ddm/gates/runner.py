@@ -39,6 +39,58 @@ class GateResult:
         return f"GateResult({self.name}, {status}, {self.elapsed:.1f}s)"
 
 
+def _check_flag_file(raw_dir: Path, gate_name: str, default_passed: bool):
+    """Read an optional flag file written by the gate subprocess.
+
+    Two formats are supported:
+
+    1.  Plain text::
+            .ddm_gate_<name>  →  first line starts with "PASS" or "FAIL"
+
+    2.  JSON::
+            .ddm_gate_<name>.json  →  {"status": "pass"|"fail", "reason": "..."}
+
+    Returns ``(passed: bool, message: str)``.  When no flag file exists the
+    *default_passed* value (derived from the exit code) is returned unchanged.
+    """
+    import json as _json
+
+    # Check JSON flag first, then plain-text flag
+    candidates = [
+        (raw_dir / f".ddm_gate_{gate_name}.json", "json"),
+        (raw_dir / f".ddm_gate_{gate_name}",       "text"),
+    ]
+    for flag_path, fmt in candidates:
+        if not flag_path.exists():
+            continue
+        try:
+            raw_text = flag_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if not raw_text:
+            continue
+
+        if fmt == "json":
+            try:
+                data = _json.loads(raw_text)
+            except _json.JSONDecodeError:
+                continue
+            status = str(data.get("status", "")).lower()
+            reason = data.get("reason", "")
+            if status == "pass":
+                return True, f" [flag: {reason or 'pass'}]"
+            elif status == "fail":
+                return False, f" [flag: {reason or 'fail'}]"
+        else:
+            first_line = raw_text.split("\n")[0].strip()
+            if first_line.startswith("PASS"):
+                return True, f" [flag: {first_line}]"
+            elif first_line.startswith("FAIL"):
+                return False, f" [flag: {first_line}]"
+
+    return default_passed, ""
+
+
 def run_gates(
     gate_defs: List[GateDef],
     raw_dir: str,
@@ -83,11 +135,18 @@ def run_gates(
             )
             elapsed = time.time() - t0
             passed = proc.returncode == 0
+
+            # ---- flag-file override (for async / LSF / external scripts) ----
+            # After the subprocess exits, check for a flag file written by the
+            # gate script.  Flag files let gates express results independently
+            # of the exit code — useful for wrappers that merely submit jobs.
+            passed, flag_msg = _check_flag_file(raw_path, gate.name, passed)
+
             result = GateResult(
                 name=gate.name,
                 passed=passed,
                 stdout=proc.stdout,
-                stderr=proc.stderr,
+                stderr=proc.stderr[:200] + (flag_msg or ""),
                 returncode=proc.returncode,
                 elapsed=elapsed,
             )
