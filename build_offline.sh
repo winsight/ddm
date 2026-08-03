@@ -57,7 +57,7 @@ mkdir -p "$PACKAGE_DIR"
 
 # Source code + config + scripts
 cp -r ddm/ config/ "$PACKAGE_DIR/"
-cp clean.sh ddm.complete.csh ddm_update.csh ddm_web.py setup.py "$PACKAGE_DIR/"
+cp clean.sh ddm.complete.csh ddm_update.csh ddm_web.py setup.py sync_owners.py "$PACKAGE_DIR/"
 cp requirements.txt "$PACKAGE_DIR/"
 
 # Offline packages

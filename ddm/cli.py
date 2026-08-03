@@ -231,7 +231,9 @@ def _load_config_safe(ctx) -> "Config | None":
     if "_config" not in ctx.obj:
         try:
             config_path = ctx.obj.get("config_path") or _default_config_path()
-            ctx.obj["_config"] = Config(config_path)
+            # Suppress "Config loaded" noise during tab completion
+            _quiet = any(a.startswith("__complete") for a in sys.argv)
+            ctx.obj["_config"] = Config(config_path, quiet=_quiet)
         except Exception:
             ctx.obj["_config"] = None
     return ctx.obj["_config"]
@@ -964,13 +966,18 @@ def _complete_commands(ctx):
         click.echo(cmd)
 
 
+def _complete_quiet(cfg_path: str):
+    """Load config silently for tab completion."""
+    return Config(cfg_path, quiet=True)
+
+
 @main.command("__complete_tags", hidden=True)
 @click.pass_context
 def _complete_tags(ctx):
     """Print tag names for csh complete script (one per line)."""
     config_path = ctx.obj.get("config_path", "config/config.yaml")
     try:
-        cfg = Config(config_path)
+        cfg = _complete_quiet(config_path)
         for tag in sorted(cfg.tag_names()):
             click.echo(tag)
     except Exception:
@@ -984,7 +991,7 @@ def _complete_modules(ctx):
     config_path = ctx.obj.get("config_path", "config/config.yaml")
     seen = set()
     try:
-        cfg = Config(config_path)
+        cfg = _complete_quiet(config_path)
         # modules from top-level modules: section (owners)
         for mod in sorted(cfg._raw.get("modules", {})):
             if mod not in seen:

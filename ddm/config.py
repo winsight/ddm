@@ -44,13 +44,13 @@ class AppConfig(BaseModel):
 class Config:
     """Loads and exposes YAML configuration."""
 
-    def __init__(self, config_path: str = "config/config.yaml"):
+    def __init__(self, config_path: str = "config/config.yaml", quiet: bool = False):
         self.config_path = config_path
         self._raw: dict = {}
         self._model: Optional[AppConfig] = None
-        self.load()
+        self.load(quiet=quiet)
 
-    def load(self):
+    def load(self, quiet: bool = False):
         path = Path(self.config_path).resolve()
         # Config paths (./a0.outgoing, ./repository) are relative to the
         # project root. With the standard layout (config/config.yaml),
@@ -71,7 +71,8 @@ class Config:
             logger.error(f"Config validation failed: {e}")
             raise
 
-        logger.info(f"Config loaded from {self.config_path}")
+        if not quiet:
+            logger.info(f"Config loaded from {self.config_path}")
 
     # ---- accessors ----
 

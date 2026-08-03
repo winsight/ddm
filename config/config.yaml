@@ -157,3 +157,13 @@ defaults:
           command: python3 -m ddm.gates.pi_final_check
       release_users:
         - wangshuai
+
+    MY_NEW_TAG:       # ← 新增，立刻生效，无需改代码
+        description: 我的自定义检查流程
+        file_patterns:
+          - "{module}.v.gz"
+        gates:
+          - name: my_gate
+            command: python3 -m ddm.gates.verilog_check
+        release_users:
+          - w00949819
