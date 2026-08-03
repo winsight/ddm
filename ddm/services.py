@@ -529,10 +529,17 @@ def submit(
                     storage.add_event(batch_uuid, EVENT_GATE_PASS, gr.name)
                     _step("Gates", f"{gr.name} ✓ ({gr.elapsed:.1f}s)", advance=True)
                 else:
-                    storage.add_event(batch_uuid, EVENT_GATE_FAIL, f"{gr.name}: {gr.stderr[:200]}")
+                    gate_def = gate_defs[i]
+                    storage.add_event(batch_uuid, EVENT_GATE_FAIL,
+                                     f"{gr.name}: {gr.stderr[:200]}")
                     _step("Gates", f"{gr.name} ✗", advance=True)
                     storage.update_batch_status(batch_uuid, STATUS_FAILED)
-                    return SubmitResult(batch_uuid, False, f"Gate '{gr.name}' failed")
+                    hint = gate_def.on_fail
+                    if hint:
+                        msg = f"Gate '{gr.name}' failed — {hint}"
+                    else:
+                        msg = f"Gate '{gr.name}' failed"
+                    return SubmitResult(batch_uuid, False, msg)
         else:
             logger.info(f"No gates defined for tag={tag}")
 

@@ -18,6 +18,7 @@ class ModuleOwnerConfig(BaseModel):
 class GateDef(BaseModel):
     name: str
     command: str
+    on_fail: str = ""   # optional: custom hint shown when this gate fails
 
 
 class TagConfig(BaseModel):

@@ -90,9 +90,11 @@ defaults:
           command: python3 -m ddm.gates.drc_check
         - name: file_consistency
           command: python3 -m ddm.gates.file_consistency
+          on_fail: 文件时间戳跨度过大，请确认所有文件来自同一轮工具生成，重新生成后重新提交
         - name: file_freshness
           #command: python3 -m ddm.gates.file_freshness
           command: /tmp/ddm_new/ddm/gates/file_freshness.csh
+          on_fail: 文件修改时间超过2h，请在 a0.outgoing 中 touch 源文件后重新提交
           # 三种对接方式任选:
           #   Python:  python3 -m ddm.gates.file_freshness
           #   Bash:    /tmp/ddm_new/ddm/gates/file_freshness.sh
