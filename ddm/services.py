@@ -214,9 +214,9 @@ def find_source_files(
     Each root supports {user} and {module} placeholders, e.g.:
       /data/{user}/{module}/a0.outgoing  →  /data/wangshuai/CPU/a0.outgoing
 
-    Roots are searched in order; files from later roots augment (not replace)
-    files already found from earlier roots.  Missing / unreadable roots are
-    skipped with a warning.
+    Roots are searched in order; when the same filename exists in multiple
+    roots the first match wins (later duplicates are skipped).
+    Missing / unreadable roots are skipped with a warning.
     """
     matched: List[str] = []
     seen: set = set()
@@ -237,11 +237,9 @@ def find_source_files(
         for pattern in patterns:
             expanded = pattern.format(user=user, module=module)
             for fname in all_files:
-                if fnmatch.fnmatch(fname, expanded):
-                    filepath = str(root / fname)
-                    if filepath not in seen:
-                        matched.append(filepath)
-                        seen.add(filepath)
+                if fname not in seen and fnmatch.fnmatch(fname, expanded):
+                    seen.add(fname)
+                    matched.append(str(root / fname))
 
     if not matched:
         logger.warning(f"No matching files in any outgoing root: {tried}")
