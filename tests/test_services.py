@@ -43,7 +43,7 @@ class TestConfig:
         cfg = Config("config/config.yaml")
 
         pv_gates = cfg.gates_for("PV_ITER")
-        assert len(pv_gates) == 2
+        assert len(pv_gates) == 3
         assert pv_gates[0].name == "verilog_syntax_check"
         assert pv_gates[1].name == "drc_baseline_check"
 
@@ -158,7 +158,7 @@ class TestFindSourceFiles:
     def test_find_flat_files(self):
         from ddm.services import find_source_files
         files = find_source_files(
-            "a0.outgoing/{user}/{module}",
+            ["a0.outgoing/{user}/{module}"],
             ["{module}.v.gz", "{module}.hier.gds"],
             "w00949819",
             "CPU",
@@ -169,7 +169,7 @@ class TestFindSourceFiles:
     def test_find_different_user(self):
         from ddm.services import find_source_files
         files = find_source_files(
-            "a0.outgoing/{user}/{module}",
+            ["a0.outgoing/{user}/{module}"],
             ["{module}.v.gz"],
             "w00949819",
             "CPU",
@@ -179,7 +179,7 @@ class TestFindSourceFiles:
     def test_no_match(self):
         from ddm.services import find_source_files
         files = find_source_files(
-            "a0.outgoing/{user}/{module}",
+            ["a0.outgoing/{user}/{module}"],
             ["{module}.v.gz"],
             "nonexistent",
             "CPU",

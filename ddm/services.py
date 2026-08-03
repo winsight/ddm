@@ -204,36 +204,47 @@ def _release_lock(lock_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def find_source_files(
-    outgoing_root: str,
+    outgoing_roots: List[str],
     patterns: List[str],
     user: str,
     module: str,
 ) -> List[str]:
-    """Find files in outgoing_root matching expanded patterns.
+    """Find files across multiple outgoing roots matching expanded patterns.
 
-    outgoing_root supports {user} and {module} placeholders, e.g.:
+    Each root supports {user} and {module} placeholders, e.g.:
       /data/{user}/{module}/a0.outgoing  →  /data/wangshuai/CPU/a0.outgoing
+
+    Roots are searched in order; files from later roots augment (not replace)
+    files already found from earlier roots.  Missing / unreadable roots are
+    skipped with a warning.
     """
-    expanded_root = outgoing_root.format(user=user, module=module)
-    root = Path(expanded_root).resolve()
-    if not root.is_dir():
-        logger.warning(f"Outgoing root does not exist: {root}")
-        return []
-
     matched: List[str] = []
-    try:
-        all_files = [f.name for f in root.iterdir() if f.is_file()]
-    except PermissionError:
-        logger.error(f"Permission denied reading {root}")
-        return []
+    seen: set = set()
+    tried: List[str] = []
 
-    for pattern in patterns:
-        expanded = pattern.format(user=user, module=module)
-        for fname in all_files:
-            if fnmatch.fnmatch(fname, expanded):
-                filepath = root / fname
-                if str(filepath) not in matched:
-                    matched.append(str(filepath))
+    for root_template in outgoing_roots:
+        expanded_root = root_template.format(user=user, module=module)
+        root = Path(expanded_root).resolve()
+        tried.append(str(root))
+        if not root.is_dir():
+            continue
+        try:
+            all_files = [f.name for f in root.iterdir() if f.is_file()]
+        except PermissionError:
+            logger.warning(f"Permission denied reading outgoing root: {root}")
+            continue
+
+        for pattern in patterns:
+            expanded = pattern.format(user=user, module=module)
+            for fname in all_files:
+                if fnmatch.fnmatch(fname, expanded):
+                    filepath = str(root / fname)
+                    if filepath not in seen:
+                        matched.append(filepath)
+                        seen.add(filepath)
+
+    if not matched:
+        logger.warning(f"No matching files in any outgoing root: {tried}")
 
     return sorted(matched)
 
@@ -426,11 +437,12 @@ def submit(
                 storage.update_batch_status(ob["batch_uuid"], STATUS_SUPERSEDED)
 
         # ---- discover source files ----
-        source_files = find_source_files(config.outgoing_root_resolved, patterns, username, module)
+        source_files = find_source_files(config.outgoing_roots_resolved, patterns, username, module)
         if not source_files:
-            expanded = config.outgoing_root.format(user=username, module=module)
-            msg = (f"在 {expanded} 中未找到匹配文件 "
-                   f"(patterns: {patterns}, 请确认 a0.outgoing 中有对应模块的数据)")
+            roots_str = ", ".join(
+                r.format(user=username, module=module) for r in config.outgoing_roots
+            )
+            msg = (f"未找到匹配文件 (patterns: {patterns})，已尝试: {roots_str}")
             logger.error(msg)
             storage.update_batch_status(batch_uuid, STATUS_FAILED)
             storage.add_event(batch_uuid, EVENT_FAILED, msg)

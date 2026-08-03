@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import yaml
 from loguru import logger
@@ -39,7 +39,7 @@ class AppConfig(BaseModel):
     file_groups: Dict[str, List[str]] = {}
     modules: Dict[str, ModuleOwnerConfig] = {}
     admins: List[str] = []
-    outgoing_root: str = "./a0.outgoing"
+    outgoing_root: Union[str, List[str]] = "./a0.outgoing"
     repository_root: str = "./repository"
     log_dir: str = "./logs"
     defaults: Dict[str, Dict[str, TagConfig]] = {}
@@ -105,19 +105,39 @@ class Config:
         return user in self.module_owners(module)
 
     @property
+    def outgoing_roots(self) -> List[str]:
+        """Return all outgoing_root templates as a list.
+
+        Accepts both:
+          outgoing_root: /home/{user}/a0.outgoing/{module}
+          outgoing_root: [/home/{user}/a0.outgoing/{module}, /nfs/shared/{module}]
+        """
+        raw = self._model.outgoing_root if self._model else "./a0.outgoing"
+        if isinstance(raw, str):
+            return [raw]
+        return raw
+
+    @property
     def outgoing_root(self) -> str:
-        """Raw template from config (may contain {user}/{module})."""
-        return self._model.outgoing_root if self._model else "./a0.outgoing"
+        """First outgoing_root template (for backward compat)."""
+        return self.outgoing_roots[0]
+
+    @property
+    def outgoing_roots_resolved(self) -> List[str]:
+        """Absolute paths for all outgoing roots, preserving {user}/{module}."""
+        result = []
+        for raw in self.outgoing_roots:
+            path = Path(raw)
+            if path.is_absolute():
+                result.append(raw)
+            else:
+                result.append(str(self.resolve_path(raw)))
+        return result
 
     @property
     def outgoing_root_resolved(self) -> str:
-        """Absolute path for outgoing_root, preserving {user}/{module} template."""
-        raw = self.outgoing_root
-        # Extract template suffix like {user}/{module}
-        path = Path(raw)
-        if path.is_absolute():
-            return raw
-        return str(self.resolve_path(raw))
+        """First resolved outgoing root (for backward compat)."""
+        return self.outgoing_roots_resolved[0]
 
     @property
     def repository_root(self) -> str:

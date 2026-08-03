@@ -52,8 +52,14 @@ shared_group: staff
 # 设为 0 则禁用自动清理，始终需要手动删除。
 stale_lock_minutes: 14
 
-# a0.outgoing 源数据根目录，支持 {user} {module} 占位符
-# 每个工程师在自己的 a0.outgoing 下平铺文件（无 tag 子目录）
+# a0.outgoing 源数据根目录，支持 {user} {module} 占位符。
+# 每个工程师在自己的 a0.outgoing 下平铺文件（无 tag 子目录）。
+# 支持单个目录或多个目录（按顺序依次搜索，文件从所有目录汇集）：
+#   单个: outgoing_root: /home/{user}/a0.outgoing/{module}
+#   多个: outgoing_root:
+#           - /home/{user}/a0.outgoing/{module}
+#           - /nfs/shared_data/{module}
+#           - /tmp/scratch/{user}/{module}
 outgoing_root: /home/{user}/a0.outgoing/{module}
 
 # 运行时仓库根目录
