@@ -18,7 +18,7 @@ from typing import Callable, List, Optional, Tuple
 import psutil
 from loguru import logger
 
-from ddm.config import VALID_TAGS, Config, GateDef
+from ddm.config import Config, GateDef
 from ddm.gates.runner import all_gates_passed, run_gates
 from ddm.storage import (
     EVENT_COPY_DONE,
@@ -370,12 +370,10 @@ def submit(
     shared_gid = config.shared_group_gid
 
     # ---- validate ----
-    if tag not in VALID_TAGS:
-        return SubmitResult("", False, f"Invalid tag: {tag}. Valid: {sorted(VALID_TAGS)}")
-
     tag_cfg = config.tag_config(tag)
     if tag_cfg is None:
-        return SubmitResult("", False, f"No config entry for tag: {tag}")
+        return SubmitResult("", False,
+            f"Unknown tag: '{tag}'.  Defined tags: {', '.join(config.tag_names())}")
 
     patterns = tag_cfg.file_patterns
     if not patterns:
@@ -717,11 +715,11 @@ def release(
     # Resolve shared-group GID once for all directory/file permission fixes
     shared_gid = config.shared_group_gid
 
-    if tag not in VALID_TAGS:
-        return ReleaseResult(False, f"Invalid tag: {tag}")
-
-    # ---- authorization ----
+    # ---- validate ----
     tag_cfg = config.tag_config(tag)
+    if tag_cfg is None:
+        return ReleaseResult(False,
+            f"Unknown tag: '{tag}'.  Defined tags: {', '.join(config.tag_names())}")
     if tag_cfg and tag_cfg.release_users and username:
         if username not in tag_cfg.release_users and username not in config.admins:
             msg = (f"用户 [{username}] 无权发布 {tag}。"

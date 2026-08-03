@@ -8,11 +8,7 @@ from typing import Dict, List, Optional, Union
 
 import yaml
 from loguru import logger
-from pydantic import BaseModel, ValidationError, validator
-
-# Valid tag enum
-VALID_TAGS = {"PV_ITER", "LVS_PASS", "BASE_CLEAN", "PV_FINAL", "PI_ITER", "PI_FINAL"}
-
+from pydantic import BaseModel, ValidationError
 
 class ModuleOwnerConfig(BaseModel):
     """Per-module submit permission: which users can submit this module."""
@@ -43,14 +39,6 @@ class AppConfig(BaseModel):
     repository_root: str = "./repository"
     log_dir: str = "./logs"
     defaults: Dict[str, Dict[str, TagConfig]] = {}
-
-    @validator("defaults")
-    def check_tags(cls, v):
-        if "tag" in v:
-            for tag_name in v["tag"]:
-                if tag_name not in VALID_TAGS:
-                    logger.warning(f"Unknown tag '{tag_name}' in config — add to VALID_TAGS if intentional")
-        return v
 
 
 class Config:

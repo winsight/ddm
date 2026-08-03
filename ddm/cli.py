@@ -22,7 +22,7 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from ddm.config import VALID_TAGS, Config
+from ddm.config import Config
 from ddm.services import HAS_BLAKE3, release, submit
 from ddm.storage import Storage
 from ddm.version import __version__, __changelog__
@@ -326,7 +326,7 @@ def main(ctx, config):
 @click.option(
     "-t", "--tag", "tag",
     required=True, type=TAG_TYPE,
-    help=f"Data tag: {', '.join(sorted(VALID_TAGS))}",
+    help="Data tag (defined in config.yaml → defaults.tag)",
 )
 @click.option("-s", "--summary", default="", help="Submission summary / notes")
 @click.option(
@@ -483,7 +483,7 @@ def _status(ctx, module, date_filter):
 
 
 @main.command(name="release")
-@click.option("-t", "--tag", required=True, type=TAG_TYPE, help=f"Tag: {', '.join(sorted(VALID_TAGS))}")
+@click.option("-t", "--tag", required=True, type=TAG_TYPE, help="Tag (defined in config.yaml → defaults.tag)")
 @click.option("-A", "--all", "release_all", is_flag=True, help="Release all configured modules for this tag")
 @click.option("-m", "--module", default=None, help="Release specific module (auto-inherits others)")
 @click.option("-v", "--version", required=True, help="Version label (e.g. V1, V2)")
@@ -564,7 +564,7 @@ def _fmt_delta(new: int, old: int) -> str:
 
 
 @main.command(name="list")
-@click.option("-t", "--tag", required=True, type=TAG_TYPE, help=f"Tag: {', '.join(sorted(VALID_TAGS))}")
+@click.option("-t", "--tag", required=True, type=TAG_TYPE, help="Tag (defined in config.yaml → defaults.tag)")
 @click.option("-A", "--all", "list_all", is_flag=True, help="Show all historical versions")
 @click.option("-m", "--module", default=None, help="Filter by module (shows all versions)")
 @click.option("-v", "--verbose", is_flag=True, help="Show per-file BLAKE3 hash and timestamp")
