@@ -159,20 +159,23 @@ class Storage:
             try:
                 with open(lock_path, "r") as f:
                     content = f.read()
+                stale = False
                 for line in content.split("\n"):
                     if line.startswith("pid="):
                         pid = int(line.split("=", 1)[1])
                         try:
-                            os.kill(pid, 0)
+                            os.kill(pid, 0)  # signal 0 = existence check
                         except OSError:
                             # Process is dead — remove stale lock
                             logger.warning(f"Removing stale DB lock (pid={pid} is dead)")
-                            try:
-                                os.unlink(lock_path)
-                            except OSError:
-                                pass
-                            continue  # retry immediately
+                            stale = True
                         break
+                if stale:
+                    try:
+                        os.unlink(lock_path)
+                    except OSError:
+                        pass
+                    continue  # jump to top of while-loop, retry O_EXCL immediately
             except Exception:
                 pass
 
@@ -203,6 +206,10 @@ class Storage:
         # when combined with the O_EXCL write lock.
         if self._on_nfs:
             conn.execute("PRAGMA journal_mode=DELETE")
+            # FULL is safest across NFS power loss; NORMAL offers a good
+            # trade-off and is still safer than OFF which the WAL default
+            # effectively provides through checkpointing.
+            conn.execute("PRAGMA synchronous=NORMAL")
         else:
             conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
