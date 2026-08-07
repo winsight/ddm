@@ -57,6 +57,8 @@ mkdir -p "$PACKAGE_DIR"
 
 # Source code + config + scripts
 cp -r ddm/ config/ "$PACKAGE_DIR/"
+# Ship config as .example so deployment never overwrites the user's config.yaml
+mv "$PACKAGE_DIR/config/config.yaml" "$PACKAGE_DIR/config/config.yaml.example" 2>/dev/null || true
 cp clean.sh ddm.complete.csh ddm_update.csh ddm_web.py setup.py sync_owners.py "$PACKAGE_DIR/"
 cp requirements.txt "$PACKAGE_DIR/"
 
@@ -163,10 +165,16 @@ echo "  目录权限已设置 (2775 SGID, group=$SHARED_GRP)"
 echo ""
 echo "--- Step 5: 配置 ---"
 if [ ! -f config/config.yaml ]; then
-    echo "  请创建 config/config.yaml (参考 docs/SETUP_TCSH.md)"
-    echo "  关键: outgoing_root + repository_root 必须用绝对路径"
+    if [ -f config/config.yaml.example ]; then
+        cp config/config.yaml.example config/config.yaml
+        echo "  config/config.yaml 已从 .example 创建，请根据环境修改路径"
+        echo "  关键: outgoing_root + repository_root + shared_group"
+    else
+        echo "  请创建 config/config.yaml (参考 docs/SETUP_TCSH.md)"
+        echo "  关键: outgoing_root + repository_root 必须用绝对路径"
+    fi
 else
-    echo "  config/config.yaml 已存在"
+    echo "  config/config.yaml 已存在，保留当前配置"
 fi
 
 # ---- Step 6: user setup script ----

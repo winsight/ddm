@@ -244,13 +244,18 @@ if (-f "$deploy_dir/install.sh") then
 endif
 
 # ---- Step 6: 恢复配置 ----
+# Always restore the previous config — deployments never ship a real config.yaml,
+# only a config.yaml.example.  New config keys should be merged from .example.
 if (-f "$CONFIG_BAK") then
-    if (! -f "$deploy_dir/config/config.yaml") then
-        cp "$CONFIG_BAK" "$deploy_dir/config/config.yaml"
-        echo "  已恢复配置"
-    else
-        echo "  保留新包中的 config.yaml (旧配置: $CONFIG_BAK)"
+    cp "$CONFIG_BAK" "$deploy_dir/config/config.yaml"
+    echo "  已恢复配置 ($CONFIG_BAK)"
+    # Warn if the new version has config keys not present in the backup
+    if (-f "$deploy_dir/config/config.yaml.example") then
+        echo "  [提示] 新版本可能有新增配置项，请对比:"
+        echo "    diff $deploy_dir/config/config.yaml $deploy_dir/config/config.yaml.example"
     endif
+else
+    echo "  首次安装: 请编辑 config/config.yaml"
 endif
 
 # ---- Step 7: 原子切换 ----
