@@ -65,6 +65,10 @@ outgoing_root: /home/{user}/a0.outgoing/{module}
 # 运行时仓库根目录
 repository_root: /tmp/ddm_test/repository
 
+# SQLite 数据库文件路径（空 = 沿用 repository_root/ddm.db）
+# NFS 环境下强烈建议指向本地磁盘，避免多用户并发写入损坏数据库：
+#   db_path: /tmp/ddm/ddm.db
+
 # 日志目录
 log_dir: /tmp/ddm_test/logs
 

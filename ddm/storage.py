@@ -93,6 +93,9 @@ CREATE INDEX IF NOT EXISTS idx_events_batch     ON events(batch_uuid);
 class Storage:
     """Encapsulates all SQLite CRUD for DDM state tracking."""
 
+    # lock acquisition timeout (seconds)
+    _LOCK_TIMEOUT = 30
+
     def __init__(self, db_path: str, shared_group_name: str = "staff"):
         self.db_path = db_path
         self._shared_group_name = shared_group_name
@@ -101,7 +104,92 @@ class Storage:
         self._shared_group_gid = _grp.getgrnam(shared_group_name).gr_gid
         os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
         self._fix_db_dir_permissions()
+
+        # Detect NFS and warn
+        self._on_nfs = self._is_nfs(os.path.dirname(self.db_path) or ".")
+        if self._on_nfs:
+            logger.warning(
+                f"DB directory is on NFS ({os.path.dirname(self.db_path)}). "
+                f"Using DELETE journal mode + file lock to avoid corruption. "
+                f"For best safety set db_path to a local path in config.yaml."
+            )
+
         self._init_db()
+
+    # ------------------------------------------------------------------
+    # NFS detection
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_nfs(dirpath: str) -> bool:
+        """Check whether *dirpath* resides on an NFS filesystem."""
+        try:
+            import subprocess
+            out = subprocess.run(
+                ["stat", "-f", "-c", "%T", dirpath],
+                capture_output=True, text=True, timeout=5,
+            )
+            fstype = out.stdout.strip().lower()
+            return fstype in ("nfs", "nfs4")
+        except Exception:
+            return False
+
+    # ------------------------------------------------------------------
+    # DB-level write lock (O_CREAT|O_EXCL — atomic even on NFS)
+    # ------------------------------------------------------------------
+
+    def _acquire_db_lock(self) -> str:
+        """Create a lock file atomically.  Returns the lock path on success.
+
+        Retries with backoff when another writer holds the lock, up to
+        ``_LOCK_TIMEOUT`` seconds.  Raises ``RuntimeError`` on timeout.
+        """
+        lock_path = self.db_path + ".lock"
+        deadline = time.time() + self._LOCK_TIMEOUT
+        while True:
+            try:
+                fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+                with os.fdopen(fd, "w") as f:
+                    f.write(f"pid={os.getpid()}\n")
+                return lock_path
+            except FileExistsError:
+                pass  # another process holds the lock — wait
+
+            # Check whether the lock holder is still alive
+            try:
+                with open(lock_path, "r") as f:
+                    content = f.read()
+                for line in content.split("\n"):
+                    if line.startswith("pid="):
+                        pid = int(line.split("=", 1)[1])
+                        try:
+                            os.kill(pid, 0)
+                        except OSError:
+                            # Process is dead — remove stale lock
+                            logger.warning(f"Removing stale DB lock (pid={pid} is dead)")
+                            try:
+                                os.unlink(lock_path)
+                            except OSError:
+                                pass
+                            continue  # retry immediately
+                        break
+            except Exception:
+                pass
+
+            if time.time() >= deadline:
+                raise RuntimeError(
+                    f"Database write lock timeout ({self._LOCK_TIMEOUT}s). "
+                    f"Another submit may be in progress. "
+                    f"If stuck, remove: {lock_path}"
+                )
+            time.sleep(1)
+
+    def _release_db_lock(self, lock_path: str):
+        """Remove the lock file (best-effort)."""
+        try:
+            os.unlink(lock_path)
+        except OSError:
+            pass
 
     # ------------------------------------------------------------------
     # connection management
@@ -110,7 +198,13 @@ class Storage:
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
+        # WAL uses mmap'd -shm which is broken across NFS clients.
+        # DELETE mode creates a per-transaction -journal file — safe
+        # when combined with the O_EXCL write lock.
+        if self._on_nfs:
+            conn.execute("PRAGMA journal_mode=DELETE")
+        else:
+            conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
@@ -120,15 +214,20 @@ class Storage:
 
     @contextmanager
     def _tx(self):
-        conn = self._connect()
+        """Write-transaction context manager with DB-level file lock."""
+        lock = self._acquire_db_lock()
         try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
+            conn = self._connect()
+            try:
+                yield conn
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
         finally:
-            conn.close()
+            self._release_db_lock(lock)
 
     def _init_db(self):
         is_new = not os.path.exists(self.db_path)

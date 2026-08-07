@@ -39,6 +39,7 @@ class AppConfig(BaseModel):
     outgoing_root: Union[str, List[str]] = "./a0.outgoing"
     repository_root: str = "./repository"
     log_dir: str = "./logs"
+    db_path: Optional[str] = None  # None = use <repository_root>/ddm.db; NFS → set to local path
     defaults: Dict[str, Dict[str, TagConfig]] = {}
 
 
@@ -241,6 +242,13 @@ class Config:
         return ""
 
     def db_path(self) -> str:
+        """Return the SQLite database path.
+
+        If config.yaml sets ``db_path`` (recommended when repository_root is on
+        NFS), use that.  Otherwise default to ``<repository_root>/ddm.db``.
+        """
+        if self._model and self._model.db_path is not None:
+            return self._model.db_path
         return str(self.resolve_path(self.repository_root) / "ddm.db")
 
     def log_path(self) -> str:
