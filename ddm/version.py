@@ -5,9 +5,10 @@ To bump the version, edit only this file:
   __changelog__ → list of (version, description) tuples, newest first
 """
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __changelog__ = [
+    ("v0.6.0", "2026-08-07 — NFS安全DB(db_path+DELETE日志+O_EXCL写锁)、config.yaml不再被部署覆盖、僵尸锁修复"),
     ("v0.5.0", "2026-08-03 — 多outgoing_root fallback、自定义TAG、file_consistency门禁、on_fail提示、补全静默、文件名去重"),
     ("v0.3.2", "2026-07-28 — 多用户shared_group权限、.cshrc最小化alias、gate插件系统+flag文件协议、file_freshness门禁"),
     ("v0.3.0", "2026-07-24 — 管理员-u替用户提交、SUPERSEDED覆盖状态、Web分页持久化、多用户权限完善"),
