@@ -16,11 +16,13 @@
 #   列出已安装版本:
 #     ddm_update.csh --list
 #
+#   清理旧版本 (保留最近 N 个):
+#     ddm_update.csh --clean [N]
+#
 # 部署目录结构:
 #   $INSTALL_DIR          → 软链接，指向生产版本 (默认 ~/ddm)
-#   ${INSTALL_DIR}_home/  备份工作区
-#     releases/            各版本归档
-#     backups/             旧版本备份
+#   $(dirname $INSTALL_DIR)/.ddm/
+#     releases/            各版本归档 (回退从这里取)
 #     current_config.yaml  当前配置备份
 #=========================================================================
 
@@ -33,6 +35,7 @@ set source    = ""
 set rollback  = 0
 set list_vers = 0
 set force     = 0
+set clean_n   = 0
 
 if ($#argv == 0) goto usage
 
@@ -46,6 +49,22 @@ while ($#argv > 0)
             breaksw
         case --force:
             set force = 1
+            breaksw
+        case --clean:
+            shift
+            if ($#argv > 0) then
+                # Check if argument looks like a number
+                set _n = `echo "$argv[1]" | grep -c '^[0-9][0-9]*$'`
+                if ($_n == 1) then
+                    set clean_n = "$argv[1]"
+                else
+                    set clean_n = 3
+                    continue
+                endif
+            else
+                set clean_n = 3
+                continue
+            endif
             breaksw
         case --dir:
             shift
@@ -80,30 +99,62 @@ if ("$_parent" == "/") then
 else
     set DDM_MGMT = "$_parent/.ddm"
 endif
-set RELEASES   = "$DDM_MGMT/releases"           # 版本归档
-set BACKUP_DIR = "$DDM_MGMT/backups"            # 旧版本备份
-set CONFIG_BAK = "$DDM_MGMT/current_config.yaml" # 配置备份
+set RELEASES   = "$DDM_MGMT/releases"            # 版本归档
+set CONFIG_BAK = "$DDM_MGMT/current_config.yaml"  # 配置备份
 
 # ---- 初始化工作区 ----
 if (! -d "$DDM_MGMT") mkdir -p "$DDM_MGMT"
 if (! -d "$RELEASES")  mkdir -p "$RELEASES"
-if (! -d "$BACKUP_DIR") mkdir -p "$BACKUP_DIR"
 
 # ---- 列出已安装版本 ----
 if ($list_vers) then
     echo ""
     echo "=== DDM 已安装版本 ==="
     if (-l "$DDM_LINK") then
-        set current = `readlink "$DDM_LINK"`
+        set current = `basename \`readlink "$DDM_LINK"\``
         echo "  当前: $current"
     endif
     echo ""
     if (-d "$RELEASES") then
-        foreach v (`ls -1dt "$RELEASES"/*/ | sed 's|.*/||;s|/$||'`)
-            echo "    $v"
+        set count = 0
+        foreach v (`ls -1dt "$RELEASES"/*/`)
+            @ count++
+            set vname = `basename "$v"`
+            if ( -l "$DDM_LINK" && `readlink "$DDM_LINK"` == "$v" ) then
+                echo "  * $vname  ← current"
+            else
+                echo "    $vname"
+            endif
         end
+        echo ""
+        echo "  共 $count 个版本"
     endif
     echo ""
+    exit 0
+endif
+
+# ---- 清理旧版本 ----
+if ($clean_n > 0) then
+    if (! -d "$RELEASES") exit 0
+    set all = `ls -1dt "$RELEASES"/*/`
+    if ($#all <= $clean_n) then
+        echo "只有 $#all 个版本，无需清理 (保留 $clean_n 个)"
+        exit 0
+    endif
+    set keep = "$clean_n"
+    set deleted = 0
+    foreach v ($all)
+        @ keep--
+        if ($keep >= 0) continue
+        set vname = `basename "$v"`
+        # Never delete the currently active version
+        if (-l "$DDM_LINK" && `readlink "$DDM_LINK"` == "$v") continue
+        echo "  删除: $vname"
+        rm -rf "$v"
+        @ deleted++
+    end
+    echo ""
+    echo "已清理 $deleted 个旧版本 (保留最近 $clean_n 个)"
     exit 0
 endif
 
@@ -113,18 +164,33 @@ if ($rollback) then
         echo "错误: 没有已安装的版本"
         exit 1
     endif
-    set versions = `ls -1dt "$RELEASES"/*/ | sed 's|.*/||;s|/$||'`
+    set versions = `ls -1dt "$RELEASES"/*/`
     if ($#versions < 2) then
         echo "错误: 只有一个版本，无法回退"
-        ls -1dt "$RELEASES"/*/
         exit 1
     endif
-    set prev = "$versions[2]"
+
+    # Skip current version, pick the previous one
+    set current = ""
+    if (-l "$DDM_LINK") set current = `readlink "$DDM_LINK"`
+    set prev = ""
+    foreach v ($versions)
+        if ("$v" != "$current" && "$prev" == "") then
+            set prev = "$v"
+            break
+        endif
+    end
+    if ("$prev" == "") then
+        echo "错误: 找不到可回退的版本"
+        exit 1
+    endif
+
+    set prev_name = `basename "$prev"`
     echo ""
-    echo "回退到: $prev"
+    echo "回退: `basename \"$current\"` → $prev_name"
     rm -f "$DDM_LINK"
-    ln -sfn "$RELEASES/$prev" "$DDM_LINK"
-    echo "完成。当前版本: $prev"
+    ln -sfn "$prev" "$DDM_LINK"
+    echo "完成。当前版本: $prev_name"
     if (-x "$DDM_LINK/venv/bin/python3") then
         "$DDM_LINK/venv/bin/python3" -m ddm check
     else
@@ -195,17 +261,7 @@ if (-l "$DDM_LINK" && -d "$DDM_LINK") then
     endif
 endif
 
-# ---- Step 4: 备份当前版本 ----
-if (-l "$DDM_LINK") then
-    set current = `readlink "$DDM_LINK"`
-    if (-d "$current") then
-        set backup_name = `basename "$current"`
-        echo "  备份当前版本: $backup_name"
-        cp -r "$current" "$BACKUP_DIR/${backup_name}_${timestamp}"
-    endif
-endif
-
-# ---- Step 5: 解压部署 ----
+# ---- Step 4: 解压部署 ----
 set deploy_dir = "$RELEASES/$ver_dir"
 echo "  部署到: $deploy_dir"
 
@@ -227,7 +283,7 @@ if ($status != 0) then
 endif
 rm -f "$tar_file"
 
-# ---- Step 5.5: 运行 install.sh (创建 venv, 装依赖, 设权限) ----
+# ---- Step 5: 运行 install.sh (创建 venv, 装依赖, 设权限) ----
 # Pass DDM_LINK so setup_user.sh embeds the *stable* symlink path,
 # not the versioned directory.  Users won't need to re-run setup after
 # an update — the symlink target changes but the path in .cshrc stays.
@@ -245,32 +301,48 @@ endif
 
 # ---- Step 6: 恢复配置 ----
 # Always restore the previous config — deployments never ship a real config.yaml,
-# only a config.yaml.example.  New config keys should be merged from .example.
+# only a config.yaml.example.
 if (-f "$CONFIG_BAK") then
     cp "$CONFIG_BAK" "$deploy_dir/config/config.yaml"
-    echo "  已恢复配置 ($CONFIG_BAK)"
-    # Warn if the new version has config keys not present in the backup
+    echo ""
+    echo "  已恢复配置"
     if (-f "$deploy_dir/config/config.yaml.example") then
         echo "  [提示] 新版本可能有新增配置项，请对比:"
         echo "    diff $deploy_dir/config/config.yaml $deploy_dir/config/config.yaml.example"
     endif
 else
+    echo ""
     echo "  首次安装: 请编辑 config/config.yaml"
 endif
 
 # ---- Step 7: 原子切换 ----
-if (-l "$DDM_LINK" || -e "$DDM_LINK") then
-    rm -rf "$DDM_LINK"
-endif
 ln -sfn "$deploy_dir" "$DDM_LINK"
+
+# ---- Step 8: 清理旧版本 (保留最近 5 个) ----
+if (-d "$RELEASES") then
+    set keep_n = 5
+    set all = `ls -1dt "$RELEASES"/*/`
+    if ($#all > $keep_n) then
+        set keep = "$keep_n"
+        set cleaned = 0
+        foreach v ($all)
+            @ keep--
+            if ($keep >= 0) continue
+            if (-l "$DDM_LINK" && `readlink "$DDM_LINK"` == "$v") continue
+            rm -rf "$v"
+            @ cleaned++
+        end
+        if ($cleaned > 0) echo "  已清理 $cleaned 个旧版本 (保留最近 $keep_n 个)"
+    endif
+endif
 
 echo ""
 echo "=== 更新完成 ==="
 echo "  当前版本: $ver_dir"
-echo "  旧版本:   $BACKUP_DIR/"
+echo "  部署路径: $DDM_LINK"
 echo ""
 
-# ---- Step 8: 验证 ----
+# ---- Step 9: 验证 ----
 echo "--- ddm check ---"
 if (-x "$deploy_dir/venv/bin/python3") then
     "$deploy_dir/venv/bin/python3" -m ddm check
@@ -297,15 +369,17 @@ usage:
     echo "  $0 user@server:/path/to/ddm.tar.gz     从远程 SCP 拉取"
     echo "  $0 --rollback                          回退到上一个版本"
     echo "  $0 --list                              列出已安装版本"
+    echo "  $0 --clean [N]                         清理旧版本 (保留最近 N 个, 默认 3)"
     echo ""
     echo "选项:"
     echo "  --dir PATH    安装目录 (默认: ~/ddm)"
     echo "  --force       覆盖已存在的版本"
     echo ""
     echo "示例:"
-    echo "  $0 /nfs/eda/packages/ddm_v2.2.tar.gz"
-    echo "  $0 --dir /nfs/eda/shared/ddm /nfs/eda/packages/ddm_v2.2.tar.gz"
-    echo "  $0 user@dev-server:/tmp/ddm_v2.2.tar.gz"
+    echo "  $0 /path/to/ddm_v0.6.0.tar.gz"
+    echo "  $0 --dir /nfs/eda/shared/ddm /path/to/ddm.tar.gz"
     echo "  $0 --rollback"
+    echo "  $0 --list"
+    echo "  $0 --clean 3"
     echo ""
     exit 1
