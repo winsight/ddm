@@ -182,12 +182,16 @@ def _setup_logger(cfg: Config, console_output: bool = True):
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} | {message}",
         level="DEBUG",
     )
-    # Make the daily log writable by ALL users — the first submitter creates it
-    # with umask-based perms (usually 644) which blocks other users' submits.
-    # 777 is intentional here: shared NFS, multi-owner team.
+    # Make the daily log writable by the shared group — the first submitter
+    # creates it with umask-based perms (usually 644) which blocks other
+    # users' submits.  chown to shared_group + 664 lets any same-group user
+    # append while keeping outsiders read-only.
     try:
+        import grp as _grp_perm
+        shared_gid = _grp_perm.getgrnam(cfg.shared_group).gr_gid
         today_log = log_dir / f"ddm_{time.strftime('%Y-%m-%d')}.log"
-        os.chmod(today_log, 0o777)
+        os.chown(today_log, -1, shared_gid)
+        os.chmod(today_log, 0o664)
     except OSError:
         pass
 
