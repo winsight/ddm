@@ -182,6 +182,14 @@ def _setup_logger(cfg: Config, console_output: bool = True):
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} | {message}",
         level="DEBUG",
     )
+    # Make the daily log writable by ALL users — the first submitter creates it
+    # with umask-based perms (usually 644) which blocks other users' submits.
+    # 777 is intentional here: shared NFS, multi-owner team.
+    try:
+        today_log = log_dir / f"ddm_{time.strftime('%Y-%m-%d')}.log"
+        os.chmod(today_log, 0o777)
+    except OSError:
+        pass
 
 
 def _parse_time_filter(time_str: str) -> float:
