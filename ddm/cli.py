@@ -12,6 +12,7 @@ Shell completion:
 
 import os
 import re
+import signal
 import sys
 import time
 from pathlib import Path
@@ -1051,6 +1052,32 @@ def _version():
             console.print(f"  [cyan]{version_str}[/]  {desc}")
 
 
+def _setup_signal_handling():
+    """Protect long-running commands (submit/release) from spurious signals.
+
+    KeyboardInterrupt == SIGINT.  A release should only be interrupted by a
+    real Ctrl+C in an interactive terminal — NOT by background/session
+    signals.  Policy:
+
+      * Non-interactive (stdin is not a tty — cron, pipe, &, nohup,
+        tmux/screen detached): ignore SIGINT and SIGHUP entirely.
+      * Interactive terminal: keep SIGINT (Ctrl+C works), but ignore
+        SIGHUP so closing/EOF on the terminal doesn't kill a running
+        release mid-copy.
+    """
+    try:
+        interactive = sys.stdin.isatty()
+        if not interactive:
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            signal.signal(signal.SIGHUP, signal.SIG_IGN)
+            logger.debug("Non-interactive mode: SIGINT/SIGHUP ignored")
+        else:
+            signal.signal(signal.SIGHUP, signal.SIG_IGN)
+            logger.debug("Interactive mode: Ctrl+C works, SIGHUP ignored")
+    except (AttributeError, ValueError, OSError):
+        pass  # no stdin or unsupported platform — keep defaults
+
+
 def _cli_entry():
     """Top-level entry: argcomplete activation, then -V/--version shortcut.
 
@@ -1058,6 +1085,7 @@ def _cli_entry():
     the process is running in a shell completion context (env var
     _ARGCOMPLETE set).  In normal usage it costs one importlib check.
     """
+    _setup_signal_handling()
     _argcomplete_bridge()
 
     if len(sys.argv) >= 2 and sys.argv[1] in ("-V", "--version"):
