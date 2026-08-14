@@ -607,12 +607,17 @@ def submit(
                 "post_check 失败: gate 后文件损坏。请联系管理员检查 raw/ 和 ready/ 目录。")
 
     except KeyboardInterrupt:
-        logger.warning(f"Submit interrupted by user (Ctrl+C): {batch_uuid[:8] if batch_uuid else '?'}")
+        import traceback as _tb
+        logger.warning(
+            f"Submit interrupted by SIGINT (not Ctrl+C?): "
+            f"{batch_uuid[:8] if batch_uuid else '?'}\n"
+            + "".join(_tb.format_stack())
+        )
         if batch_uuid:
             storage.update_batch_status(batch_uuid, STATUS_FAILED)
             storage.add_event(batch_uuid, EVENT_FAILED, "User interrupted (Ctrl+C)")
         return SubmitResult(batch_uuid, False,
-            "提交被用户中断 (Ctrl+C)。锁文件已释放，可重新提交。\n"
+            "提交被 SIGINT 中断（可能是 Ctrl+C 或 kill -INT）。锁文件已释放，可重新提交。\n"
             "  若新提交提示锁文件存在，请用联系专项负责人 ddm check 检查。")
     except Exception as exc:
         logger.exception(f"Submit failed: {exc}")
@@ -1034,9 +1039,19 @@ def release(
             version, integrity_warnings=integrity_warnings)
 
     except KeyboardInterrupt:
-        logger.warning(f"Release interrupted by user (Ctrl+C): {version}")
+        # KeyboardInterrupt == SIGINT was delivered to this process.  This is
+        # NOT caused by large files — a big release just takes longer.  Common
+        # SIGINT sources: real Ctrl+C, 'kill -INT <pid>', terminal/session
+        # hangup, or job-control actions in tcsh.  Log the traceback so the
+        # source can be identified.
+        import traceback as _tb
+        logger.warning(
+            f"Release interrupted by SIGINT (not Ctrl+C?): {version}\n"
+            + "".join(_tb.format_stack())
+        )
         return ReleaseResult(False,
-            "发布被用户中断 (Ctrl+C)。staging 目录已清理，可重新发布。", version)
+            "发布被 SIGINT 中断（可能是 Ctrl+C 或 kill -INT）。"
+            "staging 目录已清理，可重新发布。", version)
     except Exception as exc:
         logger.exception(f"Release failed: {exc}")
         return ReleaseResult(False, str(exc), version)
