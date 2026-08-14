@@ -45,7 +45,7 @@ def _list_release_versions() -> list[str]:
         return []
     return sorted(
         d.name for d in release_dir.iterdir()
-        if d.is_dir() and not d.name.startswith(".") and d.name != "@latest"
+        if d.is_dir() and not d.name.startswith(".") and d.name != "latest"
     )
 
 
@@ -241,7 +241,7 @@ def _complete_release_versions(**kwargs):
         return []
     return sorted(
         d.name for d in release_dir.iterdir()
-        if d.is_dir() and not d.name.startswith(".") and d.name != "@latest"
+        if d.is_dir() and not d.name.startswith(".") and d.name != "latest"
     )
 
 
@@ -507,13 +507,13 @@ except ImportError:
 # ======================================================================
 
 def list_release_versions() -> list[str]:
-    """扫描 ./release/ 下所有版本目录（忽略隐藏文件和 @latest 软链接）"""
+    """扫描 ./release/ 下所有版本目录（忽略隐藏文件和 latest 软链接）"""
     release_dir = Path("./release")
     if not release_dir.is_dir():
         return []
     return sorted(
         d.name for d in release_dir.iterdir()
-        if d.is_dir() and not d.name.startswith(".") and d.name != "@latest"
+        if d.is_dir() and not d.name.startswith(".") and d.name != "latest"
     )
 
 

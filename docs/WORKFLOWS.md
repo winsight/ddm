@@ -42,19 +42,19 @@ ready/{TAG}/{MODULE}/                ← 就绪暂存区（临界区）
         │
         │ ddm release
         │ Pass 1: copy2 → staging
-        │ Pass 1b: inherit from @latest
+        │ Pass 1b: inherit from latest
         │ Pass 2: size diff vs 上一版本
         │ Pass 3: post_check (size + mtime + BLAKE3)
         │ os.rename() / merge_dirs()
         ▼
-release/{TAG}/@latest → VERSION/     ← 最终发布归档
+release/{TAG}/latest → VERSION/     ← 最终发布归档
 ```
 
 ```mermaid
 flowchart LR
     A0["a0.outgoing/<br/>{user}/{module}/"] -->|"submit<br/>streaming_copy<br/>pre_check<br/>gates<br/>os.replace"| RAW
     RAW["raw/<br/>{TAG}/{MODULE}/"] --> READY
-    READY["ready/<br/>{TAG}/{MODULE}/"] -->|"release<br/>staging → commit<br/>post_check"| REL["release/{TAG}/<br/>@latest → VERSION/<br/>verilog/, gds/, pg/"]
+    READY["ready/<br/>{TAG}/{MODULE}/"] -->|"release<br/>staging → commit<br/>post_check"| REL["release/{TAG}/<br/>latest → VERSION/<br/>verilog/, gds/, pg/"]
 
     style A0 fill:#888,stroke:#333
     style REL fill:#4a9,stroke:#333,color:#fff
@@ -252,10 +252,10 @@ ddm release -t <TAG> (-m <MODULE> | -A) [-v <VERSION>] [--inherit]
 | 参数 | 必需 | 说明 |
 |------|------|------|
 | `-t / --tag` | 是 | 发布标签 |
-| `-m / --module` | 与 -A 二选一 | 发布单个模块，其余模块自动从 @latest 继承 |
+| `-m / --module` | 与 -A 二选一 | 发布单个模块，其余模块自动从 latest 继承 |
 | `-A / --all` | 与 -m 二选一 | 发布该 tag 配置的**全部**模块，缺一不可 |
 | `-v / --version` | 否 | 版本标签，默认取当天日期（YYYYMMDD） |
-| `--inherit` | 否 | 配合 -A 使用，允许从 @latest 继承未提交模块 |
+| `--inherit` | 否 | 配合 -A 使用，允许从 latest 继承未提交模块 |
 
 ### 4.2 版本命名规则
 
@@ -264,7 +264,7 @@ ddm release -t <TAG> (-m <MODULE> | -A) [-v <VERSION>] [--inherit]
 -v ""        →  20260717       （不传则纯日期）
 ```
 
-每次 release 在 `release/<TAG>/` 下创建一个版本目录，`@latest` 软链接指向最新版本。
+每次 release 在 `release/<TAG>/` 下创建一个版本目录，`latest` 软链接指向最新版本。
 
 ---
 
@@ -283,7 +283,7 @@ flowchart TD
 
     subgraph STAGING["三阶段 Staging（原子事务）"]
         G["Pass 1: copy2<br/>ready/ → .staging_xxx/<br/>保留 mtime"] --> H
-        H["Pass 1b: 继承<br/>@latest → .staging_xxx/<br/>copytree 未变更模块"] --> I
+        H["Pass 1b: 继承<br/>latest → .staging_xxx/<br/>copytree 未变更模块"] --> I
         I["Pass 2: size diff<br/>staging vs 上一版本同名文件<br/>±30% 警告 / ±50% 告警"] --> J
         J["Pass 3: post_check<br/>ready vs staging<br/>size + mtime + BLAKE3"]
     end
@@ -293,7 +293,7 @@ flowchart TD
     K -->|✓ 是| L["7. commit<br/>新版本: os.rename(staging, VERSION)<br/>追加: merge_dirs(staging, VERSION)"]
     K -->|✗ 否| M["清理 staging/<br/>返回 FAILED"]
 
-    L --> N["8. 更新 @latest 软链接"]
+    L --> N["8. 更新 latest 软链接"]
     N --> O["9. 清理 ready/{TAG}/{MODULE}/"]
     O --> P["10. 释放全局锁"]
     P --> END(["Release 完成"])
@@ -310,19 +310,19 @@ flowchart TD
 
 #### 4.4.1 单模块发布：`-m <MODULE>`
 
-只发布指定模块的一个 SUBMITTED batch，**其他模块自动从 `@latest` 继承**。
+只发布指定模块的一个 SUBMITTED batch，**其他模块自动从 `latest` 继承**。
 
 ```mermaid
 flowchart LR
     subgraph BEFORE["release/PV_ITER/ (发布前)"]
         direction TB
-        LATEST1["@latest → V1_20260710"]
+        LATEST1["latest → V1_20260710"]
         V1["V1_20260710/<br/>verilog/CPU.v.gz<br/>gds/CPU.hier.gds<br/>pg/CPU.v.pg<br/>verilog/DDR.v.gz<br/>gds/DDR.hier.gds<br/>pg/DDR.v.pg"]
     end
 
     subgraph AFTER["release/PV_ITER/ (发布后)"]
         direction TB
-        LATEST2["@latest → V2_20260717"]
+        LATEST2["latest → V2_20260717"]
         V1B["V1_20260710/<br/>verilog/CPU.v.gz gds/CPU.hier.gds pg/CPU.v.pg<br/>verilog/DDR.v.gz gds/DDR.hier.gds pg/DDR.v.pg"]
         V2["V2_20260717/<br/>verilog/CPU.v.gz ★<br/>gds/CPU.hier.gds ★<br/>pg/CPU.v.pg ★<br/>verilog/DDR.v.gz (继承)<br/>gds/DDR.hier.gds (继承)<br/>pg/DDR.v.pg (继承)"]
     end
@@ -335,8 +335,8 @@ flowchart LR
 **逻辑：**
 1. 查询 `batches WHERE tag=PV_ITER AND module=CPU AND status=SUBMITTED`
 2. 只拷贝 CPU 的 ready 文件到 staging
-3. 扫描 `@latest`（V1_20260710）中除 CPU 之外的模块 → DDR 完整继承
-4. post_check → commit → 更新 @latest → 清理 ready/CPU/
+3. 扫描 `latest`（V1_20260710）中除 CPU 之外的模块 → DDR 完整继承
+4. post_check → commit → 更新 latest → 清理 ready/CPU/
 
 #### 4.4.2 全量发布：`-A`
 
@@ -355,7 +355,7 @@ flowchart TD
 
 ```
 release/PV_ITER/
-├── @latest → V2_20260717
+├── latest → V2_20260717
 ├── V1_20260710/
 │   ├── verilog/CPU.v.gz, DDR.v.gz
 │   ├── gds/CPU.hier.gds, DDR.hier.gds
@@ -368,19 +368,19 @@ release/PV_ITER/
 
 #### 4.4.3 全量发布 + 继承：`-A --inherit`
 
-全量发布，允许某些模块没有新数据 —— 自动从 `@latest` 继承。
+全量发布，允许某些模块没有新数据 —— 自动从 `latest` 继承。
 
 ```mermaid
 flowchart LR
     subgraph BEFORE2["release/PV_ITER/ (发布前)"]
         direction TB
-        L1["@latest → V1_20260710"]
+        L1["latest → V1_20260710"]
         OLD["V1_20260710/<br/>verilog/CPU.v.gz, DDR.v.gz<br/>gds/CPU.hier.gds, DDR.hier.gds<br/>pg/CPU.v.pg, DDR.v.pg"]
     end
 
     subgraph AFTER2["release/PV_ITER/ (发布后)"]
         direction TB
-        L2["@latest → V2_20260717"]
+        L2["latest → V2_20260717"]
         OLD2["V1_20260710/<br/>verilog/CPU.v.gz, DDR.v.gz<br/>gds/CPU.hier.gds, DDR.hier.gds"]
         NEW["V2_20260717/<br/>verilog/CPU.v.gz ★新发布<br/>gds/CPU.hier.gds ★新发布<br/>verilog/DDR.v.gz (继承)<br/>gds/DDR.hier.gds (继承)"]
     end
@@ -408,11 +408,11 @@ flowchart LR
 flowchart TD
     START2["staging_dir 已构建<br/>modules_in_this_release = {CPU}"] --> Q
 
-    Q{"@latest 软链接存在<br/>且不是当前版本?"}
+    Q{"latest 软链接存在<br/>且不是当前版本?"}
     Q -->|"✗ 否"| SKIP["跳过继承"]
     Q -->|"✓ 是"| LOOP
 
-    subgraph LOOP["遍历 @latest 的每个模块目录"]
+    subgraph LOOP["遍历 latest 的每个模块目录"]
         direction TB
         R{"mod ∈<br/>modules_in_this_release?"}
         R -->|"✓ 是 (CPU)"| SKIP_MOD["跳过<br/>（本 release 有新版本）"]
@@ -440,7 +440,7 @@ flowchart TD
 ```mermaid
 flowchart LR
     READY["ready/{TAG}/{MODULE}/"] -->|"Pass 1: shutil.copy2<br/>保留 mtime"| STG[".staging_xxx/{MODULE}/"]
-    LATEST["@latest 其他模块"] -->|"Pass 1b: shutil.copytree<br/>模块粒度继承"| STG
+    LATEST["latest 其他模块"] -->|"Pass 1b: shutil.copytree<br/>模块粒度继承"| STG
     STG -->|"Pass 2: 与上一版本同名文件<br/>比较 size diff"| DIFF{±30%?}
     DIFF -->|< 30%| OK1["正常"]
     DIFF -->|30%~50%| WARN["size_change 事件"]
@@ -656,11 +656,11 @@ repository/
 flowchart TD
     Q1["需要发布什么?"]
 
-    Q1 -->|"只发布一个模块"| M1["ddm release -t TAG -m MODULE<br/>其他模块自动继承 @latest"]
+    Q1 -->|"只发布一个模块"| M1["ddm release -t TAG -m MODULE<br/>其他模块自动继承 latest"]
     Q1 -->|"发布所有模块"| Q2{"每个模块都有<br/>新的 SUBMITTED 数据?"}
 
     Q2 -->|"✓ 都有"| M2["ddm release -t TAG -A"]
-    Q2 -->|"✗ 部分没有"| M3["ddm release -t TAG -A --inherit<br/>缺失模块从 @latest 继承"]
+    Q2 -->|"✗ 部分没有"| M3["ddm release -t TAG -A --inherit<br/>缺失模块从 latest 继承"]
 
     style M1 fill:#26a,stroke:#333,color:#fff
     style M2 fill:#4a9,stroke:#333,color:#fff
@@ -679,7 +679,7 @@ flowchart TD
 
     subgraph STEP1["第 1 次：单模块 CPU"]
         E1["ddm submit -m CPU -t PV_ITER ✓<br/>ddm submit -m DDR -t PV_ITER ✓<br/>ddm release -t PV_ITER -m CPU -v V1"]
-        R1["V1_20260717/<br/>verilog/CPU.v.gz, gds/CPU.hier.gds, pg/CPU.v.pg<br/>（无 DDR，@latest 尚不存在）"]
+        R1["V1_20260717/<br/>verilog/CPU.v.gz, gds/CPU.hier.gds, pg/CPU.v.pg<br/>（无 DDR，latest 尚不存在）"]
     end
 
     subgraph STEP2["第 2 次：单模块 DDR"]
@@ -695,7 +695,7 @@ flowchart TD
     STEP0 --> STEP1 --> STEP2 --> STEP3
 
     subgraph FINAL["最终目录结构"]
-        TREE["release/PV_ITER/<br/>├── @latest → V3_20260717<br/>├── V1_20260717/verilog,gds,pg/<br/>├── V2_20260717/verilog,gds,pg/<br/>└── V3_20260717/verilog,gds,pg/"]
+        TREE["release/PV_ITER/<br/>├── latest → V3_20260717<br/>├── V1_20260717/verilog,gds,pg/<br/>├── V2_20260717/verilog,gds,pg/<br/>└── V3_20260717/verilog,gds,pg/"]
     end
 
     STEP3 --> FINAL

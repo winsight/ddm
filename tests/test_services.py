@@ -349,8 +349,8 @@ class TestFileGroups:
         # Unmatched file stays at version root
         assert root_file.is_file(), f"Expected {root_file} at version root"
 
-        # Verify @latest symlink
-        latest = cfg.release_dir() / "PV_ITER" / "@latest"
+        # Verify 'latest' symlink (no '@' prefix)
+        latest = cfg.release_dir() / "PV_ITER" / "latest"
         assert latest.is_symlink()
         assert latest.resolve().name == result.version
 

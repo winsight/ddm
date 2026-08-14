@@ -80,6 +80,13 @@ SIZE_CHANGE_ALERT_RATIO = 0.50  # alert if size changes by ±50% or more
 SHARED_DIR_PERMS = 0o2775
 SHARED_FILE_PERMS = 0o664
 
+# Name of the "latest version" symlink inside release/<TAG>/.  No '@' prefix —
+# '@' is special in tcsh (variable/word chars) and breaks tab completion /
+# globbing.  Legacy environments may still have an '@latest' symlink; code
+# reads it as a fallback during migration and removes it on next release.
+LATEST_LINK = "latest"
+LEGACY_LATEST_LINK = "@latest"
+
 
 def _ensure_dir(path: Path, repo_root: Path = Path("."), shared_group_gid: int = None):
     """Create directory with SGID group-writable permissions for shared access.
@@ -657,16 +664,19 @@ def _load_previous_sizes(release_dir: Path, tag: str, current_version: str) -> d
         return {}
 
     prev_dir = None
-    latest_link = tag_dir / "@latest"
-    if latest_link.is_symlink():
-        resolved = latest_link.resolve()
-        if resolved.name != current_version and resolved.is_dir():
-            prev_dir = resolved
+    # Prefer 'latest'; fall back to legacy '@latest' for migration
+    for link_name in (LATEST_LINK, LEGACY_LATEST_LINK):
+        latest_link = tag_dir / link_name
+        if latest_link.is_symlink():
+            resolved = latest_link.resolve()
+            if resolved.name != current_version and resolved.is_dir():
+                prev_dir = resolved
+                break
 
     if prev_dir is None:
         candidates = []
         for d in tag_dir.iterdir():
-            if d.is_dir() and d.name not in ("@latest", current_version):
+            if d.is_dir() and d.name not in (LATEST_LINK, LEGACY_LATEST_LINK, current_version):
                 try:
                     candidates.append((d.stat().st_mtime, d))
                 except OSError:
@@ -751,7 +761,7 @@ def release(
     3. Acquire global lock
     4. Copy to release/<TAG>/<VERSION>/<MODULE>
     5. post_check (2nd): compare BLAKE3 ready vs release
-    6. Update status to RELEASED, update @latest symlink
+    6. Update status to RELEASED, update latest symlink
     7. Release global lock
     """
     # Resolve shared-group GID once for all directory/file permission fixes
@@ -917,8 +927,12 @@ def release(
                 staging_map[(batch_uuid, ready_path)] = sp
                 total_files += 1
 
-        # ---- inherit unchanged modules from @latest (cumulative release) ----
-        latest_link = config.release_dir() / tag / "@latest"
+        # ---- inherit unchanged modules from latest (cumulative release) ----
+        latest_link = config.release_dir() / tag / LATEST_LINK
+        if not latest_link.is_symlink():
+            legacy = config.release_dir() / tag / LEGACY_LATEST_LINK
+            if legacy.is_symlink():
+                latest_link = legacy  # migrate from legacy '@latest'
         modules_in_this_release = {b["module"] for b in batches}
         inherited_count = 0
         # Helper: identify module from filename prefix (e.g. "CPU.v.gz" → "CPU")
@@ -943,7 +957,7 @@ def release(
                     dest_dir = staging_dir / group if group else staging_dir
                     _ensure_dir(dest_dir, repo_root, shared_group_gid=shared_gid)
                     dest_path = str(dest_dir / f.name)
-                    # Hard-link from @latest (O(1) on NFS); falls back to copy
+                    # Hard-link from latest (O(1) on NFS); falls back to copy
                     _link_or_copy(str(f), dest_path)
                     inherited_count += 1
                 total_files += inherited_count
@@ -1061,10 +1075,18 @@ def release(
             storage.add_event(batch_uuid, EVENT_RELEASE_DONE, action)
             storage.add_event(batch_uuid, EVENT_POST_CHECK_OK, "Final post-check passed")
 
-        latest_link = config.release_dir() / tag / "@latest"
+        # Publish 'latest' symlink; also remove any legacy '@latest' so the
+        # '@' name doesn't linger (it breaks tcsh globbing / completion).
+        latest_link = config.release_dir() / tag / LATEST_LINK
         if latest_link.is_symlink() or latest_link.exists():
             latest_link.unlink()
         latest_link.symlink_to(version, target_is_directory=True)
+        legacy_link = config.release_dir() / tag / LEGACY_LATEST_LINK
+        if legacy_link.is_symlink() or legacy_link.exists():
+            try:
+                legacy_link.unlink()
+            except OSError:
+                pass
 
         for batch in batches:
             batch_module = batch["module"]

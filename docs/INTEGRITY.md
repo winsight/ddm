@@ -31,7 +31,7 @@ ready/{TAG}/{MODULE}/                           ← 就绪暂存 (临界区)
         │
         ├─ os.rename (staging → VERSION) 或 merge_dirs
         ▼
-release/{TAG}/@latest → VERSION/                ← 发布归档 (只读)
+release/{TAG}/latest → VERSION/                ← 发布归档 (只读)
         │
         └─ post_check_2b (后续 release 审计)     扫描历史 RELEASED batch,
                                                   检测物理文件是否被 rm -rf

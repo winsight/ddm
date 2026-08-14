@@ -56,7 +56,7 @@ def _complete_release_versions(prefix, **kwargs):
             continue
         for vdir in tag_dir.iterdir():
             if vdir.is_dir() and not vdir.name.startswith(".") \
-               and vdir.name != "@latest":
+               and vdir.name not in ("latest", "@latest"):
                 versions.add(vdir.name)
     return sorted(v for v in versions if v.startswith(prefix))
 
@@ -509,7 +509,7 @@ def _release(ctx, tag, release_all, module, version, inherit, force):
     """Release submitted data to release/ directory.
 
     \b
-    -m MODULE: release one module, inherit rest from @latest.
+    -m MODULE: release one module, inherit rest from latest.
     -A:        release ALL configured modules (config.yaml modules list).
                Fails if any module has no SUBMITTED data (use --inherit).
     """

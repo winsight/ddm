@@ -150,10 +150,10 @@ lock_blocked  disk_full  failed
                            │ 完整性扫描（检测 rm -rf 缺失）
                            │ 授权检查（release_users）
                            │ 版本检查（不存在则创建，已存在则追加）
-                           │ 从 @latest 继承未变更模块（累积版本）
+                           │ 从 latest 继承未变更模块（累积版本）
                            │ 三阶段 staging
                            │  ┌─ Pass 1: copy2 → .staging/（保留 mtime）
-                           │  ├─ Pass 1b: 继承 @latest 中未更新模块
+                           │  ├─ Pass 1b: 继承 latest 中未更新模块
                            │  ├─ Pass 2: size diff vs 上一版本（±30% 警告）
                            │  ├─ Pass 3: post_check 2 (size + mtime + BLAKE3)
                            │  └─ commit: os.rename（新版本）或 merge（追加）
@@ -161,7 +161,7 @@ lock_blocked  disk_full  failed
                     ┌─────────────┐
                     │  release/    │  最终发布归档
                     │  <TAG>/      │  VERSION/{verilog,gds,pg,...}/
-                    │    @latest → │  软链接指向最新版本
+                    │    latest → │  软链接指向最新版本
                     │    VERSION/  │  文件名自带 {module}. 前缀区分模块
                     └─────────────┘
 ```
@@ -209,7 +209,7 @@ PENDING ──(pre_check+gate+atomic move)──▶ SUBMITTED ──(release+pos
 - **锁创建**: `os.open(O_CREAT | O_EXCL)` 内核级原子操作，杜绝 TOCTOU
 - **raw → ready**: `os.replace()` 同文件系统原子 rename
 - **staging → release**: `os.rename()` staging 目录整体原子提交
-- **@latest**: `symlink_to()` + 先 `unlink()` 防止悬空
+- **latest**: `symlink_to()` + 先 `unlink()` 防止悬空
 
 ---
 
@@ -290,7 +290,7 @@ ddm_new/                         # Git 仓库
 │   ├── raw/<TAG>/<MODULE>/       # 临时暂存
 │   ├── ready/<TAG>/<MODULE>/     # 就绪暂存
 │   ├── release/<TAG>/            # 发布归档
-│   │   ├── @latest → VERSION
+│   │   ├── latest → VERSION
 │   │   └── VERSION/{verilog,gds,pg,...}/
 │   └── ddm.db                    # SQLite 数据库
 └── logs/                         # 运行日志（不纳入 Git）

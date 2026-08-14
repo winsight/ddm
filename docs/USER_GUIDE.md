@@ -108,7 +108,7 @@ ddm release -t <TAG> -v <VERSION> (-m <MODULE> | -A) [--inherit] [--force]
 |------|------|
 | `-t` | Tag（必填） |
 | `-v` | 版本号（必填，如 V1 V2） |
-| `-m MODULE` | 单模块发布，其余从 @latest 继承 |
+| `-m MODULE` | 单模块发布，其余从 latest 继承 |
 | `-A` | 全量发布，所有模块必须已提交 |
 | `--inherit` | 配合 -A，缺失模块从上一版本继承 |
 | `--force` | 配合 -A，允许覆盖已有版本 |
@@ -143,13 +143,13 @@ ddm release -t PV_ITER -A --inherit -v V2  → 缺失模块从上一版本继承
 ready/{TAG}/{MODULE}/
         │
         ├─ Pass 1: copy2 → staging
-        ├─ Pass 1b: @latest → staging (继承未更新模块)
+        ├─ Pass 1b: latest → staging (继承未更新模块)
         ├─ Pass 2: size diff vs 上一版本
         ├─ Pass 3: post_check (staging hash vs DB hash)
         │
         └─ os.rename() 或 merge_dirs → release/
            ▼
-release/{TAG}/@latest → VERSION/
+release/{TAG}/latest → VERSION/
   verilog/CPU.v.gz, DDR.v.gz
   gds/CPU.hier.gds, DDR.hier.gds
 ```
