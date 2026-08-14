@@ -678,6 +678,27 @@ def _load_previous_sizes(release_dir: Path, tag: str, current_version: str) -> d
     return sizes
 
 
+def _link_or_copy(src: str, dst: str):
+    """Hard-link src→dst for speed on NFS; fallback to copy2 if linking fails.
+
+    Hard links are O(1) on NFS and consume no extra space.  They are safe here
+    because the source (ready/) files are never modified in place — new
+    submissions replace them via os.replace() (atomic rename), which points the
+    directory entry at a fresh inode while the hard-linked release file keeps
+    the old inode's content untouched.
+
+    IMPORTANT: when a hard link is created, do NOT os.chmod() the destination —
+    the link shares the source inode, so chmod would alter the ready/ original.
+    The ready/ files already carry SHARED_FILE_PERMS from submit.
+    """
+    try:
+        os.link(src, dst)
+    except OSError:
+        # Cross-filesystem or unsupported — fall back to a full copy
+        shutil.copy2(src, dst)
+        os.chmod(dst, SHARED_FILE_PERMS)
+
+
 def _merge_dirs(src: str, dst: str):
     """Merge src directory into dst, overwriting same-named files."""
     for item in os.listdir(src):
@@ -689,8 +710,7 @@ def _merge_dirs(src: str, dst: str):
             else:
                 _merge_dirs(s, d)
         else:
-            shutil.copy2(s, d)
-            os.chmod(d, SHARED_FILE_PERMS)
+            _link_or_copy(s, d)
 
 
 class ReleaseResult:
@@ -882,8 +902,8 @@ def release(
                 dest_dir = staging_dir / group if group else staging_dir
                 _ensure_dir(dest_dir, repo_root, shared_group_gid=shared_gid)
                 sp = str(dest_dir / fname)
-                shutil.copy2(ready_path, sp)
-                os.chmod(sp, SHARED_FILE_PERMS)
+                # Hard-link ready→staging (O(1) on NFS); falls back to copy
+                _link_or_copy(ready_path, sp)
                 staging_map[(batch_uuid, ready_path)] = sp
                 total_files += 1
 
@@ -913,8 +933,8 @@ def release(
                     dest_dir = staging_dir / group if group else staging_dir
                     _ensure_dir(dest_dir, repo_root, shared_group_gid=shared_gid)
                     dest_path = str(dest_dir / f.name)
-                    shutil.copy2(str(f), dest_path)
-                    os.chmod(dest_path, SHARED_FILE_PERMS)
+                    # Hard-link from @latest (O(1) on NFS); falls back to copy
+                    _link_or_copy(str(f), dest_path)
                     inherited_count += 1
                 total_files += inherited_count
                 if inherited_count > 0:
