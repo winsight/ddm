@@ -685,9 +685,10 @@ def _load_previous_sizes(release_dir: Path, tag: str, current_version: str) -> d
     return sizes
 
 
-def _link_or_copy(src: str, dst: str):
+def _link_or_copy(src: str, dst: str) -> bool:
     """Hard-link src→dst for speed on NFS; fallback to copy2 if linking fails.
 
+    Returns True if a hard link was created, False if a full copy was used.
     Hard links are O(1) on NFS and consume no extra space.  They are safe here
     because the source (ready/) files are never modified in place — new
     submissions replace them via os.replace() (atomic rename), which points the
@@ -700,10 +701,12 @@ def _link_or_copy(src: str, dst: str):
     """
     try:
         os.link(src, dst)
+        return True
     except OSError:
         # Cross-filesystem or unsupported — fall back to a full copy
         shutil.copy2(src, dst)
         os.chmod(dst, SHARED_FILE_PERMS)
+        return False
 
 
 def _merge_dirs(src: str, dst: str):
@@ -988,17 +991,30 @@ def release(
                 if not sp or not os.path.exists(sp):
                     all_ok = False
                     break
-                # Compare DB-stored BLAKE3 (from submit) vs staging hash
-                staging_hash = _blake3_hash(sp)
-                stored_hash = f.get("blake3_hash", "")
-                if staging_hash != stored_hash:
-                    all_ok = False
-                    logger.error(f"post_check FAILED: ready→staging BLAKE3 mismatch")
-                    storage.add_event(batch_uuid, EVENT_POST_CHECK_FAIL, sp)
-                    storage.update_batch_status(batch_uuid, STATUS_FAILED)
-                    storage.add_event(batch_uuid, EVENT_FAILED, "Release post_check failed")
-                    break
-                # Also verify mtime was preserved by copy2
+                # If staging is a hard link to ready (same inode), its content is
+                # guaranteed identical — no need to re-hash a 100G file.  Only
+                # fallback copies (copy2, e.g. cross-filesystem) need hashing.
+                hard_linked = False
+                if os.path.exists(ready_path):
+                    try:
+                        hard_linked = os.path.samefile(ready_path, sp)
+                    except OSError:
+                        hard_linked = False
+
+                if hard_linked:
+                    # Same inode as ready → content == ready == DB-stored hash
+                    pass
+                else:
+                    staging_hash = _blake3_hash(sp)
+                    stored_hash = f.get("blake3_hash", "")
+                    if staging_hash != stored_hash:
+                        all_ok = False
+                        logger.error(f"post_check FAILED: ready→staging BLAKE3 mismatch")
+                        storage.add_event(batch_uuid, EVENT_POST_CHECK_FAIL, sp)
+                        storage.update_batch_status(batch_uuid, STATUS_FAILED)
+                        storage.add_event(batch_uuid, EVENT_FAILED, "Release post_check failed")
+                        break
+                # Also verify mtime was preserved
                 ready_mtime = os.stat(ready_path).st_mtime if os.path.exists(ready_path) else 0
                 staging_mtime = os.stat(sp).st_mtime
                 if int(ready_mtime) != int(staging_mtime):
@@ -1011,7 +1027,20 @@ def release(
         # ---- all passed: commit ----
         if is_new_version:
             os.rename(str(staging_dir), str(release_version_dir))
+        elif release_all and force:
+            # Full overwrite of an existing version (-A --force): replace the
+            # old directory entirely.  _merge_dirs would leave stale files
+            # from modules not in this release, violating "full" semantics.
+            # Do it atomically: rename old aside, rename staging in, delete old.
+            old_dir = str(release_version_dir) + ".old"
+            if os.path.exists(old_dir):
+                shutil.rmtree(old_dir, ignore_errors=True)
+            os.rename(str(release_version_dir), old_dir)
+            os.rename(str(staging_dir), str(release_version_dir))
+            shutil.rmtree(old_dir, ignore_errors=True)
         else:
+            # Append/merge into existing version (-m MODULE --force, or plain
+            # -m MODULE on an existing version).  Keep prior modules' files.
             _merge_dirs(str(staging_dir), str(release_version_dir))
             shutil.rmtree(str(staging_dir), ignore_errors=True)
         # Ensure version dir and all subdirs are group-writable so
