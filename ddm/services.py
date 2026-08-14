@@ -281,6 +281,13 @@ def streaming_copy(
             hasher.update(chunk)
             copied += len(chunk)
 
+        # fsync BEFORE the file is used downstream: guarantees the copied
+        # bytes have reached the NFS server, not just the client page cache.
+        # Without this, a crash / network drop right after close() could leave
+        # raw/ files missing or truncated while the DB already recorded the batch.
+        dst.flush()
+        os.fsync(dst.fileno())
+
     # Preserve original timestamp so later stages inherit it
     os.utime(str(dest), (src_stat.st_atime, src_stat.st_mtime))
 
