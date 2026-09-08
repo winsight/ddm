@@ -1,4 +1,5 @@
 #!/bin/bash
+# Author: w00949819
 # Build offline deployment package for DDM
 #
 # Run this on a networked Linux x86_64 machine:

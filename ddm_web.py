@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Author: w00949819
 """DDM Database Viewer — standalone web interface (zero coupling with ddm/).
 
 Usage:

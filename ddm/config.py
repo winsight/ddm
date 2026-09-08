@@ -1,3 +1,4 @@
+# Author: w00949819
 """YAML configuration loader with pydantic validation."""
 
 from __future__ import annotations

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Author: w00949819
 """Sync module owners from PDSSetup.tcl to DDM config.yaml.
 
 Usage:

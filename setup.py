@@ -18,7 +18,7 @@ setup(
     name="ddm",
     version=_get_version(),
     description="芯片模块数据交付管理系统 - EDA PV/PI Data Delivery Manager",
-    author="DDM Team",
+    author="w00949819",
     packages=find_packages(),
     include_package_data=True,
     install_requires=[

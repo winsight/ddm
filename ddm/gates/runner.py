@@ -1,3 +1,4 @@
+# Author: w00949819
 """Black-box subprocess gate runner.
 
 Each gate is defined in config.yaml as:

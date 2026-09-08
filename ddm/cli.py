@@ -1,3 +1,4 @@
+# Author: w00949819
 """CLI interaction layer — Click commands with Rich terminal output.
 
 Shell completion:
@@ -1056,6 +1057,7 @@ def _version():
     console.print(f"  python:   {platform.python_version()}")
     console.print(f"  platform: {platform.system()} {platform.machine()}")
     console.print(f"  blake3:   {'available' if HAS_BLAKE3 else 'fallback (blake2b)'}")
+    console.print(f"  author:   [dim]w00949819[/]")
 
     # Changelog from version.py
     if __changelog__:

@@ -5,6 +5,8 @@ To bump the version, edit only this file:
   __changelog__ → list of (version, description) tuples, newest first
 """
 
+__author__ = "w00949819"
+
 __version__ = "0.6.2"
 
 __changelog__ = [

@@ -1,3 +1,4 @@
+# Author: w00949819
 """SQLite persistence layer for DDM state machine.
 
 Tables:

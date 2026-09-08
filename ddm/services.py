@@ -1,3 +1,4 @@
+# Author: w00949819
 """Core business logic: lock control, streaming copy, checksum, state machine, release.
 
 Layers:

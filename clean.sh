@@ -1,4 +1,5 @@
 #!/bin/bash
+# Author: w00949819
 # Clean runtime data while preserving directory structure
 set -e
 
