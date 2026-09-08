@@ -13,6 +13,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Timestamp for the deploy archive filename: ddm_deploy_<YYYYmmdd_HHMMSS>.tar.gz
+TS="$(date +%Y%m%d_%H%M%S)"
+
 echo "=== DDM Offline Deployment Builder ==="
 echo "  Platform: $(uname -s) $(uname -m)"
 echo "  Python:   $(python3 --version 2>/dev/null || echo 'not found')"
@@ -261,10 +264,11 @@ For each user:
 Docs: docs/SETUP_TCSH.md | docs/USER_GUIDE.md | docs/WORKFLOWS.md
 README
 
+ARCHIVE="ddm_deploy_${TS}.tar.gz"
 cd dist
 if [ -d ddm_deploy ] && [ "$(ls -A ddm_deploy 2>/dev/null)" ]; then
-    tar -czf ddm_deploy.tar.gz ddm_deploy/
-    ARCHIVE_SIZE=$(du -sh ddm_deploy.tar.gz 2>/dev/null | cut -f1)
+    tar -czf "$ARCHIVE" ddm_deploy/
+    ARCHIVE_SIZE=$(du -sh "$ARCHIVE" 2>/dev/null | cut -f1)
 else
     ARCHIVE_SIZE="(empty)"
 fi
@@ -273,13 +277,13 @@ cd ..
 
 echo ""
 echo "=== Done ==="
-if [ -f dist/ddm_deploy.tar.gz ]; then
-    echo "  Deploy archive: dist/ddm_deploy.tar.gz ($ARCHIVE_SIZE)"
+if [ -f "dist/$ARCHIVE" ]; then
+    echo "  Deploy archive: dist/$ARCHIVE ($ARCHIVE_SIZE)"
 fi
 echo "  Offline wheels: dist/offline_packages/ ($PACKAGE_COUNT packages)"
 echo ""
 echo "Deploy to target server:"
-echo "  scp dist/ddm_deploy.tar.gz user@centos7-server:~/"
+echo "  scp dist/$ARCHIVE user@centos7-server:~/"
 echo "  ssh user@centos7-server"
-echo "  cd ~ && tar -xzf ddm_deploy.tar.gz"
+echo "  cd ~ && tar -xzf $ARCHIVE"
 echo "  cd ddm_deploy && ./install.sh"
