@@ -1097,6 +1097,13 @@ def _cli_entry():
     the process is running in a shell completion context (env var
     _ARGCOMPLETE set).  In normal usage it costs one importlib check.
     """
+    # Tab completion (csh __complete_* probes, argcomplete) spawns a `ddm`
+    # subprocess on every new shell and on <Tab>.  Strip loguru's default
+    # stderr sink BEFORE _setup_signal_handling() so those probes never print
+    # log noise.  The quiet= flag in _load_config_safe() only silences Config
+    # loading — it runs too late to stop the signal-mode DEBUG lines below.
+    if any(a.startswith("__complete") for a in sys.argv) or "_ARGCOMPLETE" in os.environ:
+        logger.remove()
     _setup_signal_handling()
     _argcomplete_bridge()
 
